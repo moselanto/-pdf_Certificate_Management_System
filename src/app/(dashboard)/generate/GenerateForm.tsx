@@ -173,6 +173,7 @@ export function GenerateForm({
               Open verification page
             </a>
           </div>
+          <EmailCertificate certificateId={result.id} />
         </div>
       )}
     </div>

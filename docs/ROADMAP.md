@@ -51,13 +51,29 @@ This tracks the phased build of the Certificate Management System.
 > — it was written pure for exactly this lift-and-shift, and the UI can then
 > poll a job-status endpoint instead of waiting on the request.
 
-## 🔜 Phase 5 — Remaining management & enterprise polish
+## ✅ Phase 5 (part 1) — Trainers + Trainees
 
-- **Trainers UI** + **signature PNG upload** (engine already overlays the
-  signature image; `trainers.signature_path` exists).
-- **Trainees** directory + inline create from the generate screen.
-- **Email delivery** of certificates (Resend/SendGrid). `certificates.status`
-  already includes `emailed`.
+| Capability | Status |
+|------------|--------|
+| Trainers UI (list, create, detail) | Done |
+| Trainer signature PNG upload (engine overlays it) | Done |
+| Trainees directory + inline create API | Done |
+
+## ✅ Phase 5 (part 2) — Email delivery
+
+| Capability | Status |
+|------------|--------|
+| Provider-agnostic email helper (Resend default, no SDK) | Done |
+| Certificate email template (HTML + text, escaped) | Done |
+| sendCertificateEmail service (attaches PDF, status→emailed, audit) | Done |
+| POST /api/certificates/[id]/email | Done |
+| Send-email UI on Generate result + History table | Done |
+
+> Email requires `RESEND_API_KEY` + `CERT_EMAIL_FROM`. When unset, the Send
+> actions return a clear "email not configured" error and send nothing.
+
+## 🔜 Phase 5 (part 3) — Remaining enterprise polish
+
 - **Cryptographic digital signatures** (distinct from the visual signature).
 - **Audit-log UI** (data already captured in `audit_logs`).
 - **Settings**: org profile, logos, certificate-number prefix, roles/invites.
@@ -65,6 +81,7 @@ This tracks the phased build of the Certificate Management System.
   `standardFontFor`).
 - Certificate **revoke** action (status enum + verification page already
   handle the `revoked` state).
+- **Login page** wired to Supabase Auth (see SETUP.md note).
 
 ## Notes on honesty / scope
 

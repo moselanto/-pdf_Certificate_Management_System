@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { CourseCard, type CourseCardData } from "./CourseCard";
 
-async function listCourses() {
+async function listCourses(): Promise<CourseCardData[]> {
   const db = createSupabaseServerClient();
   const { data } = await db
     .from("courses")
@@ -16,7 +17,7 @@ async function listCourses() {
 }
 
 export default async function CoursesPage() {
-  let courses: Awaited<ReturnType<typeof listCourses>> = [];
+  let courses: CourseCardData[] = [];
   try {
     courses = await listCourses();
   } catch {
@@ -48,21 +49,7 @@ export default async function CoursesPage() {
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {courses.map((c) => (
-            <Link
-              key={c.id}
-              href={`/courses/${c.id}`}
-              className="group rounded-xl border border-gray-200 bg-white p-5 hover:border-brand-300 hover:shadow-sm"
-            >
-              <h3 className="font-semibold text-gray-900 group-hover:text-brand-700">
-                {c.title}
-              </h3>
-              {c.description && (
-                <p className="mt-1 line-clamp-2 text-xs text-gray-500">{c.description}</p>
-              )}
-              <p className="mt-3 text-xs font-medium text-brand-700">
-                {c.unitCount} unit{c.unitCount === 1 ? "" : "s"}
-              </p>
-            </Link>
+            <CourseCard key={c.id} course={c} />
           ))}
         </div>
       )}

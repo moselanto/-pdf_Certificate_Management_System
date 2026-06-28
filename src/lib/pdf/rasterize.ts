@@ -2,12 +2,14 @@
 
 // ============================================================================
 // Client-side PDF -> PNG raster, used to draw a template page as the editor
-// background. We render with pdf.js in the browser so we don't need a native
-// rendering binary on the server. The raster is ONLY a visual backdrop for
-// drag-and-drop; the final certificate is always produced by the pdf-lib
-// engine from the original uploaded PDF (no quality loss).
+// background and as list thumbnails. The raster is ONLY a visual aid; the final
+// certificate is always produced by the pdf-lib engine from the original PDF.
 //
-// pdf.js is loaded lazily so it never enters the server bundle.
+// We use the pdfjs-dist LEGACY build and DISABLE the separate web worker
+// (disableWorker / fake worker). Bundling the pdf.js worker reliably is
+// fragile across hosts (e.g. Codespaces), and a missing/blocked worker makes
+// rendering hang forever ("Loading preview…"). Running on the main thread is
+// slightly slower but works everywhere — perfectly fine for one-page thumbnails.
 // ============================================================================
 
 export interface RasterResult {
@@ -15,6 +17,19 @@ export interface RasterResult {
   /** Natural page size in PDF points (origin top-left for the editor). */
   widthPt: number;
   heightPt: number;
+}
+
+let pdfjsPromise: Promise<typeof import("pdfjs-dist/legacy/build/pdf.mjs")> | null = null;
+
+async function getPdfjs() {
+  if (!pdfjsPromise) {
+    pdfjsPromise = import("pdfjs-dist/legacy/build/pdf.mjs").then((pdfjs) => {
+      // Empty workerSrc + disableWorker forces main-thread rendering.
+      pdfjs.GlobalWorkerOptions.workerSrc = "";
+      return pdfjs;
+    });
+  }
+  return pdfjsPromise;
 }
 
 /**
@@ -26,20 +41,20 @@ export async function rasterizeFirstPage(
   source: Uint8Array | string,
   scale = 2,
 ): Promise<RasterResult> {
-  // Lazy import keeps pdf.js out of the server bundle.
-  const pdfjs = await import("pdfjs-dist");
-  // Use the bundled worker.
-  // @ts-expect-error - worker entry provided by pdfjs-dist
-  pdfjs.GlobalWorkerOptions.workerSrc = (
-    await import("pdfjs-dist/build/pdf.worker.min.mjs?url")
-  ).default;
+  const pdfjs = await getPdfjs();
 
   const data =
     typeof source === "string"
       ? new Uint8Array(await (await fetch(source)).arrayBuffer())
       : source;
 
-  const doc = await pdfjs.getDocument({ data }).promise;
+  const doc = await pdfjs.getDocument({
+    data,
+    disableWorker: true,
+    isEvalSupported: false,
+    useSystemFonts: true,
+  } as Parameters<typeof pdfjs.getDocument>[0]).promise;
+
   const page = await doc.getPage(1);
 
   // viewport at scale 1 gives us the page size in points.

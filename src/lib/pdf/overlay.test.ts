@@ -93,3 +93,139 @@ describe("readTemplatePageSize", () => {
     expect(size.height).toBeCloseTo(595);
   });
 });
+
+// --- Regression guards for the WinAnsi bullet crash --------------------------
+// pdf-lib's standard WinAnsi fonts cannot encode U+2022 ("•"). The engine uses
+// a "-  " marker on all three course-list paths. These tests render a course
+// list down each path and assert no throw + a valid 2-page PDF.
+describe("renderCertificate — course-list paths are WinAnsi-safe", () => {
+  const units = [
+    { id: "u1", sortOrder: 1, title: "Data Entry Accuracy" },
+    { id: "u2", sortOrder: 2, title: "Quality Assurance" },
+    { id: "u3", sortOrder: 3, title: "A very long unit title that should wrap across the available width nicely" },
+  ];
+
+  it("auto-created back page (no back PDF) renders the centered list", async () => {
+    const frontPdf = await blankTemplate();
+    const bytes = await renderCertificate({
+      frontPdf,
+      placeholders: [],
+      values: {},
+      units,
+    });
+    const out = await PDFDocument.load(bytes);
+    expect(out.getPageCount()).toBe(2);
+  });
+
+  it("designer-placed course_list box renders the list at its position", async () => {
+    const frontPdf = await blankTemplate();
+    const backPdf = await blankTemplate();
+    const placeholders: Placeholder[] = [
+      {
+        id: "cl",
+        page: "back",
+        kind: "course_list",
+        fieldKey: "course_units",
+        label: "Units Covered",
+        x: 421,
+        y: 150,
+        width: 400,
+        fontSize: 16,
+        fontFamily: "Helvetica",
+        color: "#222222",
+        align: "center",
+      },
+    ];
+    const bytes = await renderCertificate({ frontPdf, backPdf, placeholders, values: {}, units });
+    const out = await PDFDocument.load(bytes);
+    expect(out.getPageCount()).toBe(2);
+  });
+
+  it("user-supplied back design uses the fixed layout without throwing", async () => {
+    const frontPdf = await blankTemplate();
+    const backPdf = await blankTemplate();
+    const bytes = await renderCertificate({
+      frontPdf,
+      backPdf,
+      placeholders: [],
+      values: {},
+      units,
+      unitsLayout: { x: 72, y: 200, fontSize: 12, lineGap: 8 },
+    });
+    const out = await PDFDocument.load(bytes);
+    expect(out.getPageCount()).toBe(2);
+  });
+});
+
+// --- Aspect-lock image placeholder ------------------------------------------
+describe("renderCertificate — image placeholders", () => {
+  // A 1x1 transparent PNG (valid, embeddable by pdf-lib).
+  const onePxPng = Uint8Array.from(
+    atob(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+    ),
+    (c) => c.charCodeAt(0),
+  );
+
+  it("renders an aspect-locked image without throwing", async () => {
+    const frontPdf = await blankTemplate();
+    const placeholders: Placeholder[] = [
+      {
+        id: "logo",
+        page: "front",
+        kind: "image",
+        fieldKey: "logo",
+        label: "Logo",
+        x: 100,
+        y: 100,
+        width: 120,
+        height: 60,
+        fontSize: 12,
+        fontFamily: "Helvetica",
+        color: "#000000",
+        align: "left",
+        lockAspect: true,
+      },
+    ];
+    const bytes = await renderCertificate({
+      frontPdf,
+      placeholders,
+      values: {},
+      images: { logo: onePxPng },
+    });
+    const out = await PDFDocument.load(bytes);
+    expect(out.getPageCount()).toBe(1);
+  });
+});
+
+// --- Custom font fallback ----------------------------------------------------
+describe("renderCertificate — custom fonts", () => {
+  it("falls back to a standard font when the custom font bytes are invalid", async () => {
+    const frontPdf = await blankTemplate();
+    const placeholders: Placeholder[] = [
+      {
+        id: "1",
+        page: "front",
+        kind: "text",
+        fieldKey: "recipient_name",
+        label: "Recipient",
+        x: 100,
+        y: 100,
+        fontSize: 24,
+        fontFamily: "Great Vibes",
+        color: "#111111",
+        align: "left",
+      },
+    ];
+    // Garbage bytes for the referenced family — the engine must NOT throw; it
+    // should fall back to a standard font so a bad upload never fails a render.
+    const bytes = await renderCertificate({
+      frontPdf,
+      placeholders,
+      values: { recipient_name: "Jane W. Mwangi" },
+      customFonts: { "Great Vibes": new Uint8Array([0, 1, 2, 3, 4]) },
+    });
+    const out = await PDFDocument.load(bytes);
+    expect(out.getPageCount()).toBe(1);
+  });
+});

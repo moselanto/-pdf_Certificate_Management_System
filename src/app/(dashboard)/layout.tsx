@@ -1,8 +1,9 @@
 import { Sidebar } from "@/components/Sidebar";
+import { UserMenu } from "@/components/UserMenu";
 
-// Authenticated app shell. In production, wrap this with an auth guard that
-// redirects unauthenticated users to /login (Supabase Auth). The middleware
-// in src/middleware.ts refreshes the session cookie on every request.
+// Authenticated app shell. The middleware in src/middleware.ts redirects
+// unauthenticated users to /login and refreshes the session cookie on every
+// request, so anything rendered here is for a signed-in user.
 export default function DashboardLayout({
   children,
 }: {
@@ -16,7 +17,7 @@ export default function DashboardLayout({
           <h1 className="text-sm font-semibold text-gray-700">
             Certificate Management
           </h1>
-          <div className="h-8 w-8 rounded-full bg-gray-200" />
+          <UserMenu />
         </header>
         <main className="p-6">{children}</main>
       </div>

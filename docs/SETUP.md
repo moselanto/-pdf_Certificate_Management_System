@@ -89,13 +89,20 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000 and sign in with the user you created.
+Open http://localhost:3000. You'll be redirected to **`/login`** (the
+middleware guards every dashboard route). Sign in with the user you created in
+step 5.
 
-> **Note on auth UI:** this foundation ships the session middleware and
-> role-aware API routes. If you don't yet have a `/login` page wired to
-> Supabase Auth, the quickest path for local testing is Supabase's hosted auth
-> or adding `@supabase/auth-ui-react`. A dedicated login page is a small,
-> well-scoped addition — ask and it can be added.
+> **Auth flow:** `/login` supports email + password sign-in and sign-up against
+> Supabase Auth. Sign-up creates the auth user; an admin must still link a
+> `profiles` row (org + role) for that user — see step 5. If you enable email
+> confirmation in Supabase, the confirmation link returns to `/auth/callback`,
+> which exchanges the code for a session. Sign out from the header user menu
+> (it posts to `/auth/signout`).
+>
+> If you enable email confirmation, set your Supabase **Auth → URL
+> Configuration → Site URL** to match `NEXT_PUBLIC_APP_URL` so callback links
+> resolve correctly.
 
 ## 7. Issue your first certificate
 

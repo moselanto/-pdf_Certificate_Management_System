@@ -1,7 +1,13 @@
 // Domain types shared across the engine, API, and UI.
 // Kept dependency-free so the PDF engine stays pure & testable.
 
-export type PlaceholderKind = "text" | "date" | "qr" | "image" | "signature";
+export type PlaceholderKind =
+  | "text"
+  | "date"
+  | "qr"
+  | "image"
+  | "signature"
+  | "course_list"; // a positioned, sizable box that renders the course units list
 export type PlaceholderPage = "front" | "back";
 export type TextAlign = "left" | "center" | "right";
 
@@ -57,5 +63,6 @@ export interface RenderInput {
     lineGap?: number;
     bullet?: string;
     color?: string;
+    center?: boolean;
   };
 }

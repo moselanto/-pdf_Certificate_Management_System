@@ -1,6 +1,13 @@
 import { z } from "zod";
 
-export const placeholderKind = z.enum(["text", "date", "qr", "image", "signature"]);
+export const placeholderKind = z.enum([
+  "text",
+  "date",
+  "qr",
+  "image",
+  "signature",
+  "course_list",
+]);
 export const placeholderPage = z.enum(["front", "back"]);
 export const textAlign = z.enum(["left", "center", "right"]);
 

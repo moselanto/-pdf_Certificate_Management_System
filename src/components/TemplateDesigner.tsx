@@ -39,6 +39,7 @@ const FIELD_PRESETS: Array<{ kind: PlaceholderKind; label: string; fieldKey: str
   { kind: "text", label: "Certificate No.", fieldKey: "certificate_number" },
   { kind: "signature", label: "Trainer Signature", fieldKey: "trainer_signature" },
   { kind: "qr", label: "Verification QR", fieldKey: "qr_code" },
+  { kind: "course_list", label: "Course List (back)", fieldKey: "course_units" },
 ];
 
 export function TemplateDesigner({

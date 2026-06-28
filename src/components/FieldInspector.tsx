@@ -9,7 +9,7 @@ interface Props {
   onDelete: (id: string) => void;
 }
 
-const KINDS: PlaceholderKind[] = ["text", "date", "qr", "image", "signature"];
+const KINDS: PlaceholderKind[] = ["text", "date", "qr", "image", "signature", "course_list"];
 const ALIGNS: TextAlign[] = ["left", "center", "right"];
 const FONTS = ["Helvetica", "Helvetica-Bold", "Times", "Courier"];
 
@@ -25,6 +25,7 @@ export function FieldInspector({ placeholder, onChange, onDelete }: Props) {
   const p = placeholder;
   const set = (patch: Partial<Placeholder>) => onChange({ ...p, ...patch });
   const isBox = p.kind === "qr" || p.kind === "image" || p.kind === "signature";
+  const isCourseList = p.kind === "course_list";
 
   // Keep QR square when resizing via the slider.
   const resizeSquare = (size: number) => set({ width: size, height: size });
@@ -88,6 +89,60 @@ export function FieldInspector({ placeholder, onChange, onDelete }: Props) {
             value={p.y} onChange={(e) => set({ y: Number(e.target.value) })} />
         </div>
       </div>
+
+      {isCourseList && (
+        <div className="space-y-3 rounded-lg bg-brand-50/50 p-3">
+          <p className="text-xs font-semibold text-gray-700">Course list box</p>
+          <p className="text-[11px] text-gray-500">
+            The selected course&apos;s units render here at generation time. Drag
+            to position, then set the font size and wrap width below.
+          </p>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600">
+              Font size — {p.fontSize} pt
+            </label>
+            <input
+              type="range"
+              min={9}
+              max={48}
+              step={1}
+              value={p.fontSize}
+              onChange={(e) => set({ fontSize: Number(e.target.value) })}
+              className="mt-1 w-full"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-600">Font size (pt)</label>
+              <input type="number" className="mt-1 w-full rounded border-gray-300 text-sm"
+                value={p.fontSize} onChange={(e) => set({ fontSize: Number(e.target.value) })} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600">Align</label>
+              <select className="mt-1 w-full rounded border-gray-300 text-sm"
+                value={p.align} onChange={(e) => set({ align: e.target.value as TextAlign })}>
+                {ALIGNS.map((a) => <option key={a} value={a}>{a}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-600">
+                Wrap width (pt)
+              </label>
+              <input type="number" className="mt-1 w-full rounded border-gray-300 text-sm"
+                value={p.width ?? 0}
+                placeholder="0 = no wrap"
+                onChange={(e) => set({ width: Number(e.target.value) || undefined })} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600">Color</label>
+              <input type="color" className="mt-1 h-9 w-full rounded border-gray-300"
+                value={p.color} onChange={(e) => set({ color: e.target.value })} />
+            </div>
+          </div>
+        </div>
+      )}
 
       {(p.kind === "text" || p.kind === "date") && (
         <>

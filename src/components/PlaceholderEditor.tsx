@@ -148,6 +148,8 @@ export function PlaceholderEditor({
                 ? "Signature"
                 : ph.kind === "image"
                 ? "Image"
+                : ph.kind === "course_list"
+                ? "Course list ▤"
                 : ph.label}
             </div>
           );

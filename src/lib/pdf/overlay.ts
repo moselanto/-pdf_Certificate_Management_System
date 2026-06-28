@@ -71,6 +71,31 @@ function drawAlignedText(
   page.drawText(text, { x, y, size, font, color });
 }
 
+// Greedy word-wrap: split `text` into lines that each fit within `maxWidth`
+// points at the given font/size. Used for the course-list box when the user
+// sets a width, so long unit titles wrap instead of overflowing the page.
+function wrapToWidth(
+  text: string,
+  font: PDFFont,
+  size: number,
+  maxWidth: number,
+): string[] {
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (font.widthOfTextAtSize(candidate, size) <= maxWidth || !current) {
+      current = candidate;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  return lines.length ? lines : [text];
+}
+
 async function drawImage(
   pdf: PDFDocument,
   page: PDFPage,
@@ -168,6 +193,42 @@ export async function renderCertificate(input: RenderInput): Promise<Uint8Array>
     const headingFont = await getFont("Helvetica-Bold");
     const sorted = [...input.units].sort((a, b) => a.sortOrder - b.sortOrder);
     const count = sorted.length;
+
+    // If the designer placed a "course_list" box, render the units THERE at the
+    // user's chosen position, font size, width and alignment. This gives full
+    // manual control (the user asked to enlarge/position the list themselves).
+    const listPh = input.placeholders.find(
+      (p) => p.kind === "course_list" || p.fieldKey === "course_units",
+    );
+
+    if (listPh) {
+      const size = listPh.fontSize || 16;
+      const gap = Math.max(4, Math.round(size * 0.5));
+      const lineStep = size + gap;
+      const maxWidth = listPh.width; // optional wrap width in points
+      const bullet = "•  ";
+
+      // Top-left origin: listPh.y is where the first line's top sits.
+      let topY = listPh.y;
+      for (const unit of sorted) {
+        const full = `${bullet}${unit.title}`;
+        // Simple width-based wrapping when a width is set.
+        const wrapped =
+          maxWidth && maxWidth > 0
+            ? wrapToWidth(full, font, size, maxWidth)
+            : [full];
+        for (const line of wrapped) {
+          const lineWidth = font.widthOfTextAtSize(line, size);
+          let x = listPh.x;
+          if (listPh.align === "center") x = listPh.x - lineWidth / 2;
+          else if (listPh.align === "right") x = listPh.x - lineWidth;
+          const yBaseline = pageHeight - topY - size;
+          backPage.drawText(line, { x, y: yBaseline, size, font, color });
+          topY += lineStep;
+        }
+      }
+      return out.save();
+    }
 
     if (backWasAutoCreated || input.unitsLayout?.center) {
       // AUTO-CREATED (or explicitly centered) back page:

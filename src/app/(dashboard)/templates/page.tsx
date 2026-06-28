@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { TemplateCard, type TemplateCardData } from "./TemplateCard";
+import { AiTemplateHelper } from "./AiTemplateHelper";
 
 async function listTemplates(): Promise<TemplateCardData[]> {
   const db = createSupabaseServerClient();
@@ -41,6 +42,9 @@ export default async function TemplatesPage() {
           + New template
         </Link>
       </div>
+
+      {/* AI helper: get template ideas (guided questions or a free-text prompt). */}
+      <AiTemplateHelper />
 
       {templates.length === 0 ? (
         <div className="rounded-xl border border-dashed border-gray-300 p-10 text-center">

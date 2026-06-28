@@ -1,11 +1,13 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 export default function NewTemplatePage() {
   const router = useRouter();
-  const [name, setName] = useState("");
+  const searchParams = useSearchParams();
+  // Pre-fill the name when arriving from the AI helper's "Use this" button.
+  const [name, setName] = useState(searchParams.get("name") ?? "");
   const [front, setFront] = useState<File | null>(null);
   const [back, setBack] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -81,7 +83,9 @@ export default function NewTemplatePage() {
             className="mt-1 w-full text-sm"
           />
           <p className="mt-1 text-xs text-gray-500">
-            The back page supports dynamic course content when generating.
+            The back page supports dynamic course content when generating. If you
+            leave this blank but select a course at generation time, CertForge
+            adds a clean &ldquo;Course Units&rdquo; back page automatically.
           </p>
         </div>
 

@@ -13,6 +13,12 @@
 // image (PNG) when one is provided in input.images, OR a typed signature as
 // styled text (from input.values) when no image exists. This lets a trainer
 // use a scanned/drawn signature or simply a typed name.
+//
+// COURSE UNITS / BACK PAGE: when course units are provided we draw them on the
+// back page. If the template has no back page, we AUTO-CREATE a clean back page
+// (matching the front page size) with a "Course Units" heading so the course
+// content is never silently dropped. This fixes certificates that need a course
+// list on the back but were uploaded as a front-only template.
 // ============================================================================
 
 import {
@@ -91,9 +97,12 @@ export async function renderCertificate(input: RenderInput): Promise<Uint8Array>
   const frontSrc = await PDFDocument.load(input.frontPdf);
   const [frontPage] = await out.copyPages(frontSrc, [0]);
   out.addPage(frontPage);
+  const frontWidth = frontPage.getWidth();
+  const frontHeight = frontPage.getHeight();
 
   // --- BACK (optional) -----------------------------------------------------
   let backPage: PDFPage | undefined;
+  let backWasAutoCreated = false;
   if (input.backPdf) {
     const backSrc = await PDFDocument.load(input.backPdf);
     const [bp] = await out.copyPages(backSrc, [0]);
@@ -106,6 +115,13 @@ export async function renderCertificate(input: RenderInput): Promise<Uint8Array>
     if (!fontCache.has(key)) fontCache.set(key, await out.embedFont(key));
     return fontCache.get(key)!;
   };
+
+  // If we have course units to show but NO back page, create a clean one that
+  // matches the front page size so the course content always renders.
+  if (input.units?.length && !backPage) {
+    backPage = out.addPage([frontWidth, frontHeight]);
+    backWasAutoCreated = true;
+  }
 
   // --- Placeholders --------------------------------------------------------
   for (const ph of input.placeholders) {
@@ -145,19 +161,42 @@ export async function renderCertificate(input: RenderInput): Promise<Uint8Array>
 
   // --- Dynamic course units on the back page -------------------------------
   if (input.units?.length && backPage) {
-    const layout = input.unitsLayout ?? { x: 72, y: 200 };
-    const size = layout.fontSize ?? 12;
-    const gap = layout.lineGap ?? 6;
-    const bullet = layout.bullet ?? "•  ";
-    const color = hexToRgb(layout.color ?? "#222222");
-    const font = await getFont("Helvetica");
     const pageHeight = backPage.getHeight();
+    const pageWidth = backPage.getWidth();
+
+    // When we auto-created the back page, draw a centered heading and start the
+    // list a bit lower so it reads as a proper "Course Units" page. When the
+    // user supplied their own back design, honour the configured layout.
+    const headingFont = await getFont("Helvetica-Bold");
+    let startY = input.unitsLayout?.y ?? 200;
+    let startX = input.unitsLayout?.x ?? 72;
+
+    if (backWasAutoCreated) {
+      const heading = "Course Units";
+      const headingSize = 22;
+      const hw = headingFont.widthOfTextAtSize(heading, headingSize);
+      backPage.drawText(heading, {
+        x: (pageWidth - hw) / 2,
+        y: pageHeight - 90,
+        size: headingSize,
+        font: headingFont,
+        color: hexToRgb("#222222"),
+      });
+      startY = 130; // top-left origin; list begins below the heading
+      startX = 90;
+    }
+
+    const size = input.unitsLayout?.fontSize ?? 13;
+    const gap = input.unitsLayout?.lineGap ?? 8;
+    const bullet = input.unitsLayout?.bullet ?? "•  ";
+    const color = hexToRgb(input.unitsLayout?.color ?? "#222222");
+    const font = await getFont("Helvetica");
 
     const sorted = [...input.units].sort((a, b) => a.sortOrder - b.sortOrder);
     sorted.forEach((unit, i) => {
-      const lineY = pageHeight - layout.y - i * (size + gap) - size;
+      const lineY = pageHeight - startY - i * (size + gap) - size;
       backPage!.drawText(`${bullet}${unit.title}`, {
-        x: layout.x,
+        x: startX,
         y: lineY,
         size,
         font,

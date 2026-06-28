@@ -1,17 +1,24 @@
 import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { TemplateCard, type TemplateCardData } from "./TemplateCard";
 
-async function listTemplates() {
+async function listTemplates(): Promise<TemplateCardData[]> {
   const db = createSupabaseServerClient();
   const { data } = await db
     .from("templates")
     .select("id, name, back_pdf_path, page_width, page_height, created_at")
     .order("created_at", { ascending: false });
-  return data ?? [];
+  return (data ?? []).map((t) => ({
+    id: t.id,
+    name: t.name,
+    hasBack: Boolean(t.back_pdf_path),
+    pageWidth: t.page_width,
+    pageHeight: t.page_height,
+  }));
 }
 
 export default async function TemplatesPage() {
-  let templates: Awaited<ReturnType<typeof listTemplates>> = [];
+  let templates: TemplateCardData[] = [];
   try {
     templates = await listTemplates();
   } catch {
@@ -50,23 +57,7 @@ export default async function TemplatesPage() {
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {templates.map((t) => (
-            <Link
-              key={t.id}
-              href={`/templates/${t.id}`}
-              className="group rounded-xl border border-gray-200 bg-white p-5 hover:border-brand-300 hover:shadow-sm"
-            >
-              <div className="flex h-28 items-center justify-center rounded-lg bg-gradient-to-br from-brand-50 to-gray-100 text-xs font-medium text-brand-700">
-                {t.page_width && t.page_height
-                  ? `${Math.round(t.page_width)} × ${Math.round(t.page_height)} pt`
-                  : "PDF template"}
-              </div>
-              <h3 className="mt-3 font-semibold text-gray-900 group-hover:text-brand-700">
-                {t.name}
-              </h3>
-              <p className="mt-1 text-xs text-gray-500">
-                {t.back_pdf_path ? "Front + back" : "Front only"} · Click to design
-              </p>
-            </Link>
+            <TemplateCard key={t.id} template={t} />
           ))}
         </div>
       )}

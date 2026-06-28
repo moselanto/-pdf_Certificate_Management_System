@@ -1,5 +1,12 @@
 import { createServerClient } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
+
+// This module exposes two Supabase clients:
+//   - createSupabaseServerClient(): RLS-scoped, bound to the user's session.
+//   - createSupabaseServiceClient(): service-role, BYPASSES RLS (server-only).
+// Pick the user-scoped client by default; reach for the service client only on
+// the public verification path and background jobs.
 
 /**
  * Supabase client bound to the user's auth cookies. RLS applies — queries

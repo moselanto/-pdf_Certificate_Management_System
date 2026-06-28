@@ -9,6 +9,7 @@ import { renderCertificate } from "@/lib/pdf/overlay";
 import { qrPng, verificationUrl } from "@/lib/qr/qr";
 import { generateCertificateNumber } from "@/lib/pdf/certificateNumber";
 import { downloadTemplate, uploadCertificate } from "@/lib/supabase/storage";
+import { computeIntegrityHash, INTEGRITY_ALG } from "@/lib/pdf/integrity";
 import type { Placeholder, CourseUnit } from "@/lib/domain/types";
 
 export interface GenerateArgs {
@@ -181,7 +182,18 @@ export async function generateCertificate(
     customFonts,
   });
 
-  // 7. Persist PDF + DB row
+  // 7b. Content-integrity hash: bind the rendered PDF bytes to the certificate's
+  //     identifying fields (SHA-256). Surfaced on the verification page so a
+  //     holder can re-hash the PDF and confirm it was not altered after issue.
+  //     NOTE: integrity hash, not a PAdES/PKCS#7 PDF signature (see ROADMAP).
+  const integrityHash = await computeIntegrityHash(pdfBytes, {
+    certificateNumber,
+    recipientName: args.recipientName,
+    issueDate: args.issueDate,
+    orgId: args.orgId,
+  });
+
+  // 8. Persist PDF + DB row
   const pdfPath = await uploadCertificate(db, certificateNumber, pdfBytes);
 
   const { data: cert, error: cErr } = await db
@@ -190,6 +202,8 @@ export async function generateCertificate(
       org_id: args.orgId,
       certificate_number: certificateNumber,
       template_id: args.templateId,
+      integrity_hash: integrityHash,
+      integrity_alg: INTEGRITY_ALG,
       course_id: args.courseId ?? null,
       trainer_id: args.trainerId ?? null,
       trainee_id: args.traineeId ?? null,

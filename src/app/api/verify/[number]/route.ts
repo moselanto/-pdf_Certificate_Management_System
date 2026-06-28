@@ -23,7 +23,7 @@ export async function GET(
   const { data: cert } = await db
     .from("certificates")
     .select(
-      "certificate_number, recipient_name, issue_date, status, verification_token, org_id, course_id, template_id, trainer_id",
+      "certificate_number, recipient_name, issue_date, status, verification_token, org_id, course_id, template_id, trainer_id, integrity_hash, integrity_alg",
     )
     .eq("certificate_number", params.number)
     .single();
@@ -61,5 +61,10 @@ export async function GET(
     issueDate: cert.issue_date,
     organization: issuedBy,
     course: course?.title ?? null,
+    // Content-integrity signature (SHA-256 over the issued PDF + identifying
+    // fields). A holder can re-hash their PDF and confirm it matches to prove
+    // the document was not altered after issue. Not a PAdES/PKCS#7 signature.
+    integrityHash: cert.integrity_hash ?? null,
+    integrityAlg: cert.integrity_alg ?? null,
   });
 }

@@ -72,16 +72,36 @@ This tracks the phased build of the Certificate Management System.
 > Email requires `RESEND_API_KEY` + `CERT_EMAIL_FROM`. When unset, the Send
 > actions return a clear "email not configured" error and send nothing.
 
-## 🔜 Phase 5 (part 3) — Remaining enterprise polish
+## ✅ Phase 5 (part 3) — Enterprise polish
 
-- **Cryptographic digital signatures** (distinct from the visual signature).
-- **Audit-log UI** (data already captured in `audit_logs`).
-- **Settings**: org profile, logos, certificate-number prefix, roles/invites.
-- **Custom font embedding** via `@pdf-lib/fontkit` (engine seam at
-  `standardFontFor`).
-- Certificate **revoke** action (status enum + verification page already
-  handle the `revoked` state).
-- **Login page** wired to Supabase Auth (see SETUP.md note).
+| Capability | Status |
+|------------|--------|
+| Audit-log / activity viewer (`/audit`, paginated, filterable) | Done |
+| Custom font embedding via `@pdf-lib/fontkit` (upload + designer pick) | Done |
+| Content-integrity signature (SHA-256, shown on verification page) | Done |
+| Org default logo + per-template logo fallback | Done |
+| Image/logo aspect-lock (contain vs stretch) | Done |
+| Certificate **revoke** action | Done (earlier) |
+| Login page wired to Supabase Auth | Done (earlier) |
+
+> **Custom fonts:** an org uploads `.ttf`/`.otf` in Settings; the engine embeds
+> the matching family via fontkit (subset), falling back to a standard font when
+> a font is missing or unreadable so a bad upload never fails a batch.
+
+> **Integrity signature — honest scope:** the verification page shows a SHA-256
+> computed over the issued PDF bytes + identifying fields, so a holder can
+> re-hash the PDF and prove it was not altered after issue. This is
+> **tamper-evidence, not a PAdES/PKCS#7 digital signature** — it is not
+> X.509-backed and PDF readers will not render a trust badge for it. A full
+> PAdES signer (cert + key management, LTV) remains a future item below.
+
+## 🔜 Phase 5 (part 4) — Still open
+
+- **Full PAdES / PKCS#7 PDF signing** (X.509 cert + private key, embedded
+  signature dictionary, optional LTV) — distinct from today's integrity hash.
+- **Designer affordance to drop a Logo field on the back page** (the engine
+  already renders a back-page logo; this is a thin UI follow-up).
+- **Roles/invites** management UI and a configurable certificate-number prefix.
 
 ## Notes on honesty / scope
 

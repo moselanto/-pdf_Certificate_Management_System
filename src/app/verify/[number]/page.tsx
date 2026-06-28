@@ -12,6 +12,8 @@ interface VerifyResult {
   issueDate?: string;
   organization?: string | null;
   course?: string | null;
+  integrityHash?: string | null;
+  integrityAlg?: string | null;
 }
 
 async function fetchVerification(
@@ -89,6 +91,27 @@ export default async function VerifyPage({
                 />
               )}
             </dl>
+
+            {result.integrityHash && (
+              <div className="mt-5 rounded-lg bg-gray-50 p-3">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex rounded-full bg-gray-200 px-2 py-0.5 text-[11px] font-semibold text-gray-700">
+                    {result.integrityAlg ?? "SHA-256"}
+                  </span>
+                  <span className="text-xs font-semibold text-gray-700">
+                    Content integrity signature
+                  </span>
+                </div>
+                <p className="mt-1 break-all font-mono text-[11px] leading-relaxed text-gray-600">
+                  {result.integrityHash}
+                </p>
+                <p className="mt-2 text-[11px] text-gray-500">
+                  This fingerprint was computed from the certificate PDF at the
+                  time it was issued. If you have the PDF, you can re-hash it and
+                  confirm it matches to prove the document has not been altered.
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>

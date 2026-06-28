@@ -306,7 +306,8 @@ export async function renderCertificate(input: RenderInput): Promise<Uint8Array>
 
       // Compute the widest line so we can left-align all lines to one edge while
       // keeping the block centered on the page.
-      const lines = sorted.map((u) => `•  ${u.title}`);
+      // WinAnsi-safe bullet ("-"): pdf-lib's standard fonts cannot encode U+2022.
+      const lines = sorted.map((u) => `-  ${u.title}`);
       const widest = lines.reduce(
         (m, l) => Math.max(m, font.widthOfTextAtSize(l, size)),
         0,
@@ -338,7 +339,10 @@ export async function renderCertificate(input: RenderInput): Promise<Uint8Array>
       const startX = input.unitsLayout?.x ?? 72;
       const size = input.unitsLayout?.fontSize ?? 13;
       const gap = input.unitsLayout?.lineGap ?? 8;
-      const bullet = input.unitsLayout?.bullet ?? "•  ";
+      // WinAnsi-safe default bullet ("-"): pdf-lib's standard fonts cannot
+      // encode U+2022 ("•"). A caller may still pass a custom bullet, but it
+      // must be WinAnsi-encodable or rendering will throw.
+      const bullet = input.unitsLayout?.bullet ?? "-  ";
 
       sorted.forEach((unit, i) => {
         const lineY = pageHeight - startY - i * (size + gap) - size;

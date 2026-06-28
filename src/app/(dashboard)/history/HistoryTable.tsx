@@ -17,6 +17,7 @@ export function HistoryTable() {
   const [rows, setRows] = useState<Certificate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const load = useCallback(async (query: string) => {
     setLoading(true);
@@ -44,6 +45,29 @@ export function HistoryTable() {
     const t = setTimeout(() => load(q.trim()), 300);
     return () => clearTimeout(t);
   }, [q, load]);
+
+  const onDelete = async (c: Certificate) => {
+    if (
+      !confirm(
+        `Delete certificate ${c.certificate_number} for ${c.recipient_name}?\n\nThis permanently removes it from history and deletes the PDF. This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    setDeletingId(c.id);
+    try {
+      const res = await fetch(`/api/certificates/${c.id}`, { method: "DELETE" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "Delete failed");
+      // Optimistically remove the row.
+      setRows((r) => r.filter((row) => row.id !== c.id));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const statusBadge = (s: string) => {
     const map: Record<string, string> = {
@@ -125,6 +149,13 @@ export function HistoryTable() {
                       >
                         Verify
                       </a>
+                      <button
+                        onClick={() => onDelete(c)}
+                        disabled={deletingId === c.id}
+                        className="text-xs font-medium text-red-600 hover:underline disabled:opacity-50"
+                      >
+                        {deletingId === c.id ? "Deleting…" : "Delete"}
+                      </button>
                     </div>
                   </td>
                 </tr>

@@ -8,6 +8,12 @@ import { createSupabaseServiceClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
+// The issuing institution shown as "Issued by" on the public verification page.
+// Defaults to Pimofy Training Institute; override with CERT_ISSUER_NAME if the
+// organisation row has no name set.
+const DEFAULT_ISSUER =
+  process.env.CERT_ISSUER_NAME ?? "Pimofy Training Institute";
+
 export async function GET(
   req: NextRequest,
   { params }: { params: { number: string } },
@@ -44,7 +50,9 @@ export async function GET(
     certificateNumber: cert.certificate_number,
     recipientName: cert.recipient_name,
     issueDate: cert.issue_date,
-    organization: org?.name ?? null,
+    // Prefer the organisation's own name; fall back to the configured issuer
+    // so the verification page always shows an "Issued by" line.
+    organization: org?.name?.trim() || DEFAULT_ISSUER,
     course: course?.title ?? null,
   });
 }

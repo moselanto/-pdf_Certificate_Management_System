@@ -74,9 +74,10 @@ export default async function VerifyPage({
             <dl className="mt-4 space-y-2 text-sm">
               <Row label="Certificate No." value={result.certificateNumber} mono />
               {result.course && <Row label="Course" value={result.course} />}
-              {result.organization && (
-                <Row label="Issued by" value={result.organization} />
-              )}
+              <Row
+                label="Issued by"
+                value={result.organization ?? "Pimofy Training Institute"}
+              />
               {result.issueDate && (
                 <Row
                   label="Issue date"

@@ -1,44 +1,69 @@
 "use client";
 
-// The one-minute certificate flow: choose template + course + trainer, type
-// the recipient + issue date, click Generate. On success we show the
+// The one-minute certificate flow: choose template + course + trainer, pick or
+// type the recipient + issue date, click Generate. On success we show the
 // certificate number, a verification link, a download button, and a small
 // inline "email this certificate" widget.
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 interface Option { id: string; name: string }
 interface CourseOption { id: string; title: string }
+interface TraineeOption { id: string; name: string; email: string | null }
 
 interface Result {
   id: string;
   certificateNumber: string;
 }
 
+const NEW_RECIPIENT = "__new__";
+
 export function GenerateForm({
   templates,
   courses,
   trainers,
+  trainees,
 }: {
   templates: Option[];
   courses: CourseOption[];
   trainers: Option[];
+  trainees: TraineeOption[];
 }) {
   const [templateId, setTemplateId] = useState("");
   const [courseId, setCourseId] = useState("");
   const [trainerId, setTrainerId] = useState("");
+
+  // Recipient: either pick a saved trainee, or choose "new" and type a name.
+  const [traineeId, setTraineeId] = useState<string>(NEW_RECIPIENT);
   const [recipientName, setRecipientName] = useState("");
+
   const [issueDate, setIssueDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
+
+  const selectedTrainee = useMemo(
+    () => trainees.find((t) => t.id === traineeId) ?? null,
+    [trainees, traineeId],
+  );
+
+  // The name that will actually be printed: the picked trainee's name, or the
+  // free-text field when adding a new recipient.
+  const effectiveName =
+    traineeId !== NEW_RECIPIENT ? selectedTrainee?.name ?? "" : recipientName.trim();
+
+  const onPickRecipient = (value: string) => {
+    setTraineeId(value);
+    // When switching back to "new", keep whatever was typed.
+    if (value !== NEW_RECIPIENT) setError(null);
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setResult(null);
     if (!templateId) return setError("Choose a template.");
-    if (!recipientName.trim()) return setError("Enter the recipient's name.");
+    if (!effectiveName) return setError("Choose a trainee or enter the recipient's name.");
 
     setBusy(true);
     try {
@@ -49,7 +74,8 @@ export function GenerateForm({
           templateId,
           courseId: courseId || undefined,
           trainerId: trainerId || undefined,
-          recipientName: recipientName.trim(),
+          traineeId: traineeId !== NEW_RECIPIENT ? traineeId : undefined,
+          recipientName: effectiveName,
           issueDate,
           values: {},
         }),
@@ -92,13 +118,41 @@ export function GenerateForm({
           </select>
         </Field>
 
-        <Field label="Recipient name" required>
-          <input
-            value={recipientName}
-            onChange={(e) => setRecipientName(e.target.value)}
-            placeholder="Jane W. Mwangi"
+        {/* Recipient: saved trainee picker + free-text fallback */}
+        <Field label="Recipient" required>
+          <select
+            value={traineeId}
+            onChange={(e) => onPickRecipient(e.target.value)}
             className="mt-1 w-full rounded-lg border-gray-300 text-sm"
-          />
+          >
+            <option value={NEW_RECIPIENT}>+ New recipient (type a name)</option>
+            {trainees.length > 0 && (
+              <optgroup label="Saved trainees">
+                {trainees.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                    {t.email ? ` · ${t.email}` : ""}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+          </select>
+
+          {traineeId === NEW_RECIPIENT ? (
+            <input
+              value={recipientName}
+              onChange={(e) => setRecipientName(e.target.value)}
+              placeholder="Jane W. Mwangi"
+              className="mt-2 w-full rounded-lg border-gray-300 text-sm"
+            />
+          ) : (
+            <p className="mt-2 text-xs text-gray-500">
+              Printing for <span className="font-medium text-gray-700">{selectedTrainee?.name}</span>
+              {selectedTrainee?.email
+                ? ` — certificate can be emailed to ${selectedTrainee.email}.`
+                : " — no email on file; add one in Trainees to enable emailing."}
+            </p>
+          )}
         </Field>
 
         <div className="grid grid-cols-2 gap-4">
@@ -174,7 +228,10 @@ export function GenerateForm({
               Open verification page
             </a>
           </div>
-          <EmailCertificate certificateId={result.id} />
+          <EmailCertificate
+            certificateId={result.id}
+            defaultEmail={selectedTrainee?.email ?? ""}
+          />
         </div>
       )}
     </div>
@@ -182,10 +239,16 @@ export function GenerateForm({
 }
 
 // Inline "email this certificate" widget. Calls POST /api/certificates/[id]/email.
-// Leave the address blank to send to the linked trainee's email; or type an
-// address to override. Optional — generation already succeeded by this point.
-function EmailCertificate({ certificateId }: { certificateId: string }) {
-  const [to, setTo] = useState("");
+// Pre-fills the linked trainee's email when one is known; leave blank to use the
+// trainee on file, or type an address to override.
+function EmailCertificate({
+  certificateId,
+  defaultEmail,
+}: {
+  certificateId: string;
+  defaultEmail?: string;
+}) {
+  const [to, setTo] = useState(defaultEmail ?? "");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);

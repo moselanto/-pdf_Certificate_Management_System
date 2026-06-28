@@ -24,6 +24,12 @@ export interface Placeholder {
   fontFamily: string;
   color: string; // hex, e.g. "#111111"
   align: TextAlign;
+  // QR-only appearance (optional). qrDark = module color, qrLight = background.
+  // Set qrTransparent true to render the QR background transparent — useful on
+  // dark certificate backgrounds together with a light qrDark color.
+  qrDark?: string; // hex, e.g. "#FFFFFF"
+  qrLight?: string; // hex, e.g. "#FFFFFF"
+  qrTransparent?: boolean;
 }
 
 export interface CourseUnit {

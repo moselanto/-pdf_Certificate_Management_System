@@ -37,7 +37,13 @@ export async function POST(req: NextRequest) {
       ? await downloadTemplate(db, template.back_pdf_path)
       : undefined;
 
-    const qrBytes = await qrPng(verificationUrl("CF-2026-PREVIEW", "preview"));
+    // Render the QR using the QR placeholder's configured colors so the preview
+    // reflects custom QR appearance (e.g. white-on-transparent for dark themes).
+    const qrPh = body.placeholders.find((p) => p.kind === "qr");
+    const qrBytes = await qrPng(verificationUrl("CF-2026-PREVIEW", "preview"), {
+      dark: qrPh?.qrDark,
+      light: qrPh?.qrTransparent ? "#00000000" : qrPh?.qrLight,
+    });
 
     const pdfBytes = await renderCertificate({
       frontPdf,

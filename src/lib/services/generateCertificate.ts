@@ -87,10 +87,15 @@ export async function generateCertificate(
     }
   }
 
-  // 4. Allocate certificate number + verification token, build the QR
+  // 4. Allocate certificate number + verification token, build the QR using
+  //    the QR placeholder's configured colors (if any).
   const certificateNumber = generateCertificateNumber();
   const token = cryptoRandomHex(16);
-  const qrBytes = await qrPng(verificationUrl(certificateNumber, token));
+  const qrPh = placeholders.find((p) => p.kind === "qr");
+  const qrBytes = await qrPng(verificationUrl(certificateNumber, token), {
+    dark: qrPh?.qrDark,
+    light: qrPh?.qrTransparent ? "#00000000" : qrPh?.qrLight,
+  });
 
   // 5. Assemble field values
   const values: Record<string, string> = {
@@ -101,7 +106,7 @@ export async function generateCertificate(
       year: "numeric",
     }),
     certificate_number: certificateNumber,
-    ...(trainerName ? { trainer_name: trainerName } : {}),
+    ...(trainerName ? { trainer_name: trainerName, trainer_signature: trainerName } : {}),
     ...args.values,
   };
 
@@ -181,5 +186,8 @@ function mapPlaceholder(r: Record<string, unknown>): Placeholder {
     fontFamily: String(r.font_family),
     color: String(r.color),
     align: r.align as Placeholder["align"],
+    qrDark: r.qr_dark == null ? undefined : String(r.qr_dark),
+    qrLight: r.qr_light == null ? undefined : String(r.qr_light),
+    qrTransparent: r.qr_transparent == null ? undefined : Boolean(r.qr_transparent),
   };
 }

@@ -4,6 +4,8 @@ export const placeholderKind = z.enum(["text", "date", "qr", "image", "signature
 export const placeholderPage = z.enum(["front", "back"]);
 export const textAlign = z.enum(["left", "center", "right"]);
 
+const hexColor = z.string().regex(/^#([0-9a-fA-F]{6})$/);
+
 export const placeholderSchema = z.object({
   id: z.string().optional(),
   page: placeholderPage.default("front"),
@@ -16,8 +18,12 @@ export const placeholderSchema = z.object({
   height: z.number().optional(),
   fontSize: z.number().positive().default(14),
   fontFamily: z.string().default("Helvetica"),
-  color: z.string().regex(/^#([0-9a-fA-F]{6})$/).default("#111111"),
+  color: hexColor.default("#111111"),
   align: textAlign.default("left"),
+  // QR appearance (optional)
+  qrDark: hexColor.optional(),
+  qrLight: hexColor.optional(),
+  qrTransparent: z.boolean().optional(),
 });
 
 export const generateCertificateSchema = z.object({

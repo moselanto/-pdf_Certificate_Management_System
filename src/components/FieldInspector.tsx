@@ -24,6 +24,10 @@ export function FieldInspector({ placeholder, onChange, onDelete }: Props) {
   }
   const p = placeholder;
   const set = (patch: Partial<Placeholder>) => onChange({ ...p, ...patch });
+  const isBox = p.kind === "qr" || p.kind === "image" || p.kind === "signature";
+
+  // Keep QR square when resizing via the slider.
+  const resizeSquare = (size: number) => set({ width: size, height: size });
 
   return (
     <div className="space-y-4 rounded-lg border border-gray-200 p-4">
@@ -118,19 +122,95 @@ export function FieldInspector({ placeholder, onChange, onDelete }: Props) {
         </>
       )}
 
-      {(p.kind === "qr" || p.kind === "image" || p.kind === "signature") && (
-        <div className="grid grid-cols-2 gap-3">
+      {isBox && (
+        <>
+          {/* Quick-resize slider (keeps QR square; for image/signature it sets
+              both width & height for a fast shrink, then fine-tune below). */}
           <div>
-            <label className="block text-xs font-semibold text-gray-600">Width (pt)</label>
-            <input type="number" className="mt-1 w-full rounded border-gray-300 text-sm"
-              value={p.width ?? 96} onChange={(e) => set({ width: Number(e.target.value) })} />
+            <label className="block text-xs font-semibold text-gray-600">
+              Size — {p.width ?? 64} pt
+            </label>
+            <input
+              type="range"
+              min={24}
+              max={256}
+              step={2}
+              value={p.width ?? 64}
+              onChange={(e) =>
+                p.kind === "qr"
+                  ? resizeSquare(Number(e.target.value))
+                  : set({ width: Number(e.target.value) })
+              }
+              className="mt-1 w-full"
+            />
+            <p className="mt-1 text-[11px] text-gray-400">
+              Drag to shrink or enlarge. QR stays square; fine-tune width/height below.
+            </p>
           </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-600">Height (pt)</label>
-            <input type="number" className="mt-1 w-full rounded border-gray-300 text-sm"
-              value={p.height ?? 96} onChange={(e) => set({ height: Number(e.target.value) })} />
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-600">Width (pt)</label>
+              <input type="number" className="mt-1 w-full rounded border-gray-300 text-sm"
+                value={p.width ?? 64}
+                onChange={(e) =>
+                  p.kind === "qr"
+                    ? resizeSquare(Number(e.target.value))
+                    : set({ width: Number(e.target.value) })
+                } />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600">Height (pt)</label>
+              <input type="number" className="mt-1 w-full rounded border-gray-300 text-sm"
+                value={p.height ?? 64}
+                onChange={(e) =>
+                  p.kind === "qr"
+                    ? resizeSquare(Number(e.target.value))
+                    : set({ height: Number(e.target.value) })
+                } />
+            </div>
           </div>
+        </>
+      )}
+
+      {p.kind === "qr" && (
+        <div className="space-y-3 rounded-lg bg-gray-50 p-3">
+          <p className="text-xs font-semibold text-gray-600">QR appearance</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-gray-500">Module color</label>
+              <input type="color" className="mt-1 h-9 w-full rounded border-gray-300"
+                value={p.qrDark ?? "#000000"}
+                onChange={(e) => set({ qrDark: e.target.value })} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500">Background</label>
+              <input type="color" className="mt-1 h-9 w-full rounded border-gray-300 disabled:opacity-40"
+                value={p.qrLight ?? "#ffffff"}
+                disabled={p.qrTransparent ?? false}
+                onChange={(e) => set({ qrLight: e.target.value })} />
+            </div>
+          </div>
+          <label className="flex items-center gap-2 text-xs text-gray-600">
+            <input
+              type="checkbox"
+              checked={p.qrTransparent ?? false}
+              onChange={(e) => set({ qrTransparent: e.target.checked })}
+            />
+            Transparent background (recommended on dark certificates)
+          </label>
+          <p className="text-[11px] text-gray-400">
+            On a dark background, set the module color to white and tick
+            transparent so only the QR pattern shows.
+          </p>
         </div>
+      )}
+
+      {p.kind === "signature" && (
+        <p className="rounded-lg bg-gray-50 p-3 text-[11px] text-gray-500">
+          If the assigned trainer has an uploaded signature image, it renders
+          here. Otherwise the trainer&apos;s typed name is drawn as a signature.
+        </p>
       )}
 
       <button

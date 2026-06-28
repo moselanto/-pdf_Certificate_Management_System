@@ -45,6 +45,9 @@ export async function GET(
     fontFamily: r.font_family,
     color: r.color,
     align: r.align,
+    qrDark: r.qr_dark == null ? undefined : String(r.qr_dark),
+    qrLight: r.qr_light == null ? undefined : String(r.qr_light),
+    qrTransparent: r.qr_transparent == null ? undefined : Boolean(r.qr_transparent),
   }));
   return NextResponse.json({ placeholders });
 }
@@ -87,6 +90,9 @@ export async function PUT(
         font_family: p.fontFamily,
         color: p.color,
         align: p.align,
+        qr_dark: p.qrDark ?? null,
+        qr_light: p.qrLight ?? null,
+        qr_transparent: p.qrTransparent ?? false,
       }));
       const { error: insErr } = await db.from("placeholders").insert(rows);
       if (insErr) throw new Error(insErr.message);

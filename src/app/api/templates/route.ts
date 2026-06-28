@@ -10,6 +10,7 @@
 // drag-and-drop editor can scale its canvas exactly to the printed page.
 
 import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { readTemplatePageSize } from "@/lib/pdf/overlay";
 import { TEMPLATE_BUCKET } from "@/lib/supabase/storage";
@@ -17,14 +18,33 @@ import { TEMPLATE_BUCKET } from "@/lib/supabase/storage";
 export const runtime = "nodejs";
 
 async function currentContext(db: ReturnType<typeof createSupabaseServerClient>) {
-  const { data: auth } = await db.auth.getUser();
+  const { data: auth, error: authErr } = await db.auth.getUser();
+
+  // --- TEMPORARY DIAGNOSTIC (remove once auth is confirmed working) ---------
+  // Logs exactly what the server sees so we can tell whether the session
+  // cookie is arriving with the request.
+  try {
+    const all = cookies().getAll();
+    const names = all.map((c) => c.name);
+    const hasSupabaseCookie = names.some((n) => n.includes("sb-") || n.includes("supabase"));
+    console.log("[templates] cookie names:", names);
+    console.log("[templates] has supabase auth cookie:", hasSupabaseCookie);
+    console.log("[templates] getUser ->", auth.user ? `user ${auth.user.id}` : "NO USER", authErr?.message ?? "");
+  } catch (e) {
+    console.log("[templates] diagnostic error:", (e as Error).message);
+  }
+  // --------------------------------------------------------------------------
+
   if (!auth.user) return null;
   const { data: profile } = await db
     .from("profiles")
     .select("org_id, role")
     .eq("id", auth.user.id)
     .single();
-  if (!profile) return null;
+  if (!profile) {
+    console.log("[templates] user has NO profiles row for id", auth.user.id);
+    return null;
+  }
   return { userId: auth.user.id, orgId: profile.org_id, role: profile.role as string };
 }
 

@@ -1,33 +1,29 @@
 // ============================================================================
-// aiCertificateImages — generate several visually DISTINCT certificate
-// background images for the "Design with AI" helper.
+// aiCertificateDesigns — OFFLINE certificate background generator for the
+// "Design with AI" helper. NO external API, NO per-image cost.
 //
-// IMPLEMENTATION NOTE (image provider):
-//   This project runs inside Town, whose image generation is exposed to the
-//   assistant as a tool, not as a public REST endpoint we can call from a
-//   Next.js route at runtime. So at deploy time you wire ONE of the following
-//   via env, and this module calls it:
-//     - OPENAI_API_KEY            -> uses OpenAI Images (gpt-image-1)
-//     - REPLICATE_API_TOKEN       -> (optional) a Replicate model
-//   If no provider key is configured, we throw a clear, actionable error so the
-//   UI can tell the user how to enable it (rather than silently failing).
+// Produces several visually-distinct certificate backgrounds by rendering pure
+// vector artwork (via pdf-lib) from a rotating set of style presets. Each
+// background is rendered to a single-page PDF, stored in the templates bucket,
+// and a signed URL is returned for an inline preview (the UI previews PDFs
+// natively, the same way TemplateCard does — no rasterization needed).
 //
-// Each generated image is uploaded to Supabase Storage (templates bucket) and a
-// short-lived signed URL is returned for the thumbnail. The stored path is
-// returned as `storagePath` so "Use this template" can re-read the bytes and
-// wrap them into a front-page PDF.
+// The stored path is returned as `imageContentUri`; "Use this template"
+// (/api/templates/from-ai) copies that PDF straight in as the template front.
 // ============================================================================
 
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { TEMPLATE_BUCKET } from "@/lib/supabase/storage";
+import { STYLE_PRESETS, buildBackgroundPdf } from "@/lib/pdf/certBackground";
 
 export interface CertificateDesign {
   id: string;
+  styleId: string;
   name: string;
   description: string;
   palette: string[];
-  imageUrl: string; // signed URL for preview
-  imageContentUri: string; // storage path, used by from-ai to build the PDF
+  imageUrl: string; // signed URL to the background PDF (inline preview)
+  imageContentUri: string; // storage path, used by from-ai to build the template
 }
 
 interface GenArgs {
@@ -41,79 +37,25 @@ interface GenArgs {
   variation: number;
 }
 
-// A rotating palette of distinct design directions so each sample (and each
-// "generate more" batch) looks different.
-const STYLE_PRESETS = [
-  {
-    name: "Classic Navy & Gold",
-    palette: ["#0B3D67", "#C9A227", "#FFFDF7"],
-    prompt:
-      "Elegant double border in navy blue and gold with ornate corner flourishes, a faint guilloche watermark on ivory, and a gold medallion seal at top center. Formal and prestigious.",
-  },
-  {
-    name: "Modern Minimal",
-    palette: ["#2563EB", "#111827", "#FFFFFF"],
-    prompt:
-      "Clean minimal design: a thin single-color accent rule along the top and bottom, generous white space, a small geometric emblem in one corner. Contemporary and uncluttered.",
-  },
-  {
-    name: "Elegant Emerald",
-    palette: ["#0F766E", "#B08D57", "#FBFBF8"],
-    prompt:
-      "Refined emerald-green and soft bronze border with delicate botanical filigree corners, a subtle laurel wreath at top center, on warm off-white. Sophisticated.",
-  },
-  {
-    name: "Royal Purple Crest",
-    palette: ["#6D28D9", "#D4AF37", "#FAF7FF"],
-    prompt:
-      "Deep purple and gold heraldic frame with a crest/ribbon emblem at top center and fine line ornamentation in the corners, on a pale lilac-tinted background. Distinguished.",
-  },
-  {
-    name: "Corporate Slate",
-    palette: ["#334155", "#0EA5E9", "#FFFFFF"],
-    prompt:
-      "Professional slate-gray frame with a single sky-blue accent stripe, squared modern corners, and a simple shield emblem. Business-like and trustworthy.",
-  },
-  {
-    name: "Warm Burgundy",
-    palette: ["#7F1D1D", "#C9A227", "#FFFBF5"],
-    prompt:
-      "Burgundy and gold ornate border with classic scrollwork corners and a circular seal at top center, on cream. Traditional and warm.",
-  },
-];
-
-function buildPrompt(style: (typeof STYLE_PRESETS)[number], args: GenArgs): string {
-  const subject = args.purpose || args.brief || "certificate of completion";
-  const tone = args.tone ? `${args.tone} tone. ` : "";
-  return [
-    `A blank professional ${subject} background template, ${args.orientation} orientation.`,
-    style.prompt,
-    tone,
-    "Leave the entire center empty for text to be added later.",
-    "ABSOLUTELY NO text, no words, no letters, no numbers, no placeholder writing anywhere — only the decorative border, background texture, and emblem.",
-    "Print-ready, high resolution, edges clean to the page margin.",
-  ].join(" ");
-}
+// A4-ish page sizes in points (must match from-ai's PAGE constant).
+const PAGE = {
+  landscape: { w: 842, h: 595 },
+  portrait: { w: 595, h: 842 },
+};
 
 /**
- * Generate `count` distinct certificate backgrounds. Uses OpenAI Images when
- * OPENAI_API_KEY is set. Each image is stored and a signed preview URL returned.
+ * Generate `count` distinct certificate backgrounds, fully offline.
+ * Each background is rendered to a PDF, stored, and a signed preview URL
+ * returned. `variation` rotates the preset selection so "Generate more"
+ * yields a different set each time.
  */
 export async function generateCertificateBackgrounds(
   args: GenArgs,
 ): Promise<CertificateDesign[]> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error(
-      "AI design needs an image provider. Add OPENAI_API_KEY to your environment to enable 'Design with AI'.",
-    );
-  }
-
   const db = createSupabaseServiceClient();
-  const size = args.orientation === "portrait" ? "1024x1536" : "1536x1024";
+  const { w: pageW, h: pageH } = PAGE[args.orientation];
 
-  // Pick `count` distinct presets, rotated by the variation nonce so
-  // "generate more" yields a different set each time.
+  // Pick `count` distinct presets, rotated by the variation nonce.
   const start = Math.abs(args.variation) % STYLE_PRESETS.length;
   const picks = Array.from({ length: args.count }, (_, i) =>
     STYLE_PRESETS[(start + i) % STYLE_PRESETS.length],
@@ -122,50 +64,31 @@ export async function generateCertificateBackgrounds(
   const results: CertificateDesign[] = [];
 
   for (let i = 0; i < picks.length; i++) {
-    const style = picks[i];
-    const prompt = buildPrompt(style, args);
+    const preset = picks[i];
 
-    // 1. Generate the image (OpenAI Images, base64 response).
-    const res = await fetch("https://api.openai.com/v1/images/generations", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-image-1",
-        prompt,
-        size,
-        n: 1,
-      }),
-    });
-    if (!res.ok) {
-      const txt = await res.text().catch(() => "");
-      throw new Error(`image generation failed: ${res.status} ${txt.slice(0, 200)}`);
-    }
-    const json = await res.json();
-    const b64: string | undefined = json?.data?.[0]?.b64_json;
-    if (!b64) throw new Error("image generation returned no image");
-    const bytes = Uint8Array.from(Buffer.from(b64, "base64"));
+    // 1. Render the background to a single-page PDF (pure vector, no API).
+    const pdfBytes = await buildBackgroundPdf(preset.id, pageW, pageH);
 
-    // 2. Store it (PNG) under the org's folder.
+    // 2. Store it under the org's ai folder.
     const stamp = Date.now();
-    const path = `${args.orgId}/ai/${stamp}-${i}.png`;
+    const path = `${args.orgId}/ai/${stamp}-${i}-${preset.id}.pdf`;
     const { error: upErr } = await db.storage
       .from(TEMPLATE_BUCKET)
-      .upload(path, bytes, { contentType: "image/png", upsert: false });
+      .upload(path, pdfBytes, { contentType: "application/pdf", upsert: false });
     if (upErr) throw new Error(`store background failed: ${upErr.message}`);
 
-    // 3. Signed preview URL.
+    // 3. Signed preview URL (30 min).
     const { data: signed } = await db.storage
       .from(TEMPLATE_BUCKET)
       .createSignedUrl(path, 60 * 30);
 
+    const subject = args.purpose || args.brief || "certificate";
     results.push({
       id: `${stamp}-${i}`,
-      name: style.name,
-      description: `${style.name} — generated background for "${args.purpose || args.brief || "certificate"}".`,
-      palette: style.palette,
+      styleId: preset.id,
+      name: preset.name,
+      description: `${preset.description} Tailored for "${subject}".`,
+      palette: preset.palette,
       imageUrl: signed?.signedUrl ?? "",
       imageContentUri: path,
     });

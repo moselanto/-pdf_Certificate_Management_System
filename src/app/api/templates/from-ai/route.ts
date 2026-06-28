@@ -1,9 +1,10 @@
 // POST /api/templates/from-ai
-// Create a real, usable template from an AI-generated background image — NO
-// manual PDF upload. We:
-//   1. read the stored PNG background (from ai-suggest),
-//   2. wrap it into a single front-page PDF sized to the image's aspect ratio
-//      (landscape ~842x595, portrait ~595x842 points),
+// Create a real, usable template from an offline-generated certificate
+// background — NO manual PDF upload, NO external API. We:
+//   1. read the stored background PDF (rendered by the offline vector
+//      generator in ai-suggest; it is ALREADY a single front-page PDF),
+//   2. copy it in as the template front (re-rendering from the styleId when
+//      available, so the front is always clean and the right page size),
 //   3. (optionally) create a clean blank back page for the course-units list,
 //   4. upload front/back PDFs to the templates bucket,
 //   5. insert the template row, and
@@ -11,14 +12,15 @@
 //      date, certificate number, signature, institution, QR, + a back-page
 //      course_list box) so the template is ready to generate immediately.
 //
-// Body: { imageStoragePath: string, name: string, orientation?: "landscape"|
-//         "portrait", includeBack?: boolean }
+// Body: { imageStoragePath: string, name: string, styleId?: string,
+//         orientation?: "landscape"|"portrait", includeBack?: boolean }
 // Returns: { id, pageWidth, pageHeight }
 
 import { NextRequest, NextResponse } from "next/server";
 import { PDFDocument } from "pdf-lib";
 import { createSupabaseServerClient, createSupabaseServiceClient } from "@/lib/supabase/server";
 import { downloadBytes, TEMPLATE_BUCKET } from "@/lib/supabase/storage";
+import { buildBackgroundPdf, presetById } from "@/lib/pdf/certBackground";
 import type { Placeholder } from "@/lib/domain/types";
 import { z } from "zod";
 
@@ -39,29 +41,38 @@ async function currentContext(db: ReturnType<typeof createSupabaseServerClient>)
 const bodySchema = z.object({
   imageStoragePath: z.string().min(1),
   name: z.string().min(1),
+  styleId: z.string().optional(),
   orientation: z.enum(["landscape", "portrait"]).optional(),
   includeBack: z.boolean().optional(),
 });
 
-// A4-ish landscape/portrait in points.
+// A4-ish landscape/portrait in points (must match certBackground/ai-suggest).
 const PAGE = {
   landscape: { w: 842, h: 595 },
   portrait: { w: 595, h: 842 },
 };
 
-/** Wrap PNG bytes into a single-page PDF that fills the page edge-to-edge. */
-async function imageToPdf(
-  pngBytes: Uint8Array,
+/**
+ * Produce the front-page PDF for the template.
+ *
+ * The offline generator already stored a single-page background PDF at
+ * `storagePath`. We re-render the front from the known styleId when one is
+ * provided (guarantees a clean, correctly-sized page even if the stored
+ * preview was generated at a different size), and fall back to copying the
+ * stored PDF bytes when the styleId is unknown.
+ */
+async function buildFrontPdf(
+  svc: ReturnType<typeof createSupabaseServiceClient>,
+  storagePath: string,
+  styleId: string | undefined,
   pageW: number,
   pageH: number,
 ): Promise<Uint8Array> {
-  const pdf = await PDFDocument.create();
-  const page = pdf.addPage([pageW, pageH]);
-  const img = await pdf.embedPng(pngBytes);
-  // Fill the whole page (the background was generated at the right aspect
-  // ratio, so a full-bleed draw avoids letterboxing).
-  page.drawImage(img, { x: 0, y: 0, width: pageW, height: pageH });
-  return pdf.save();
+  if (styleId && presetById(styleId).id === styleId) {
+    return buildBackgroundPdf(styleId, pageW, pageH);
+  }
+  // Fallback: copy the stored background PDF as-is.
+  return downloadBytes(svc, TEMPLATE_BUCKET, storagePath);
 }
 
 /** Build a blank back page (for the course-units list). */
@@ -219,12 +230,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "invalid image reference" }, { status: 400 });
     }
 
-    // Service client to read the stored PNG (RLS-free storage read).
+    // Service client for RLS-free storage reads (the stored background lives
+    // under the org's ai/ folder).
     const svc = createSupabaseServiceClient();
-    const pngBytes = await downloadBytes(svc, TEMPLATE_BUCKET, input.imageStoragePath);
 
-    // Build front (image) + optional back (blank) PDFs.
-    const frontPdf = await imageToPdf(pngBytes, pageW, pageH);
+    // Build the front PDF: re-render from the known styleId when provided,
+    // else copy the stored background PDF as-is.
+    const frontPdf = await buildFrontPdf(
+      svc,
+      input.imageStoragePath,
+      input.styleId,
+      pageW,
+      pageH,
+    );
 
     const stamp = Date.now();
     const frontPath = `${ctx.orgId}/${stamp}-ai-front.pdf`;

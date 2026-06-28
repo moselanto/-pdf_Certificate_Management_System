@@ -15,6 +15,7 @@ import { useState } from "react";
 
 interface Suggestion {
   id: string;
+  styleId: string;
   name: string;
   description: string;
   palette: string[];
@@ -90,6 +91,7 @@ export function AiTemplateHelper() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           imageStoragePath: s.imageContentUri,
+          styleId: s.styleId,
           name: s.name,
           orientation: s.orientation,
           includeBack: Boolean(s.backPage),
@@ -293,10 +295,11 @@ export function AiTemplateHelper() {
           )}
 
           <p className="text-xs text-gray-400">
-            AI generates real certificate backgrounds. "Use this template" creates
-            the template and auto-places the standard fields (recipient, course,
-            date, signature, QR, and more) — no PDF upload needed. You can fine-tune
-            everything in the designer afterwards.
+            Designs are generated instantly on your own server — no external
+            service, no API key, no cost. "Use this template" creates the
+            template and auto-places the standard fields (recipient, course,
+            date, signature, QR, and more) — no PDF upload needed. You can
+            fine-tune everything in the designer afterwards.
           </p>
         </div>
       )}

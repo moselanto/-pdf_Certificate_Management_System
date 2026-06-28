@@ -80,6 +80,7 @@ export async function POST(req: NextRequest) {
 
     const suggestions = designs.map((d) => ({
       id: d.id,
+      styleId: d.styleId,
       name: d.name,
       description: d.description,
       palette: d.palette,
@@ -92,7 +93,7 @@ export async function POST(req: NextRequest) {
       orientation: input.orientation ?? "landscape",
     }));
 
-    return NextResponse.json({ suggestions, source: "ai" });
+    return NextResponse.json({ suggestions, source: "offline" });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }

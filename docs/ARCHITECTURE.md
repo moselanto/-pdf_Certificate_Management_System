@@ -1,5 +1,9 @@
 # CertForge — Architecture
 
+> **Related docs:** [`API.md`](API.md) (every HTTP route), [`DATA_MODEL.md`](DATA_MODEL.md)
+> (tables, RLS, migrations), [`SETUP.md`](SETUP.md) (install), and
+> [`USER_MANUAL.md`](USER_MANUAL.md) (end-user guide).
+
 ## Layers
 
 ```

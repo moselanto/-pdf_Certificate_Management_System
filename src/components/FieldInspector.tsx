@@ -231,6 +231,20 @@ export function FieldInspector({ placeholder, onChange, onDelete }: Props) {
                 } />
             </div>
           </div>
+
+          {/* Aspect-lock applies to image & signature boxes (a logo/signature
+              that isn't the same proportion as the box would otherwise stretch).
+              QR codes are intrinsically square, so the toggle is hidden for QR. */}
+          {(p.kind === "image" || p.kind === "signature") && (
+            <label className="flex items-center gap-2 text-xs text-gray-600">
+              <input
+                type="checkbox"
+                checked={p.lockAspect ?? false}
+                onChange={(e) => set({ lockAspect: e.target.checked })}
+              />
+              Keep aspect ratio (fit inside the box without stretching)
+            </label>
+          )}
         </>
       )}
 

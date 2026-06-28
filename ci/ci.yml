@@ -1,0 +1,51 @@
+name: CI
+
+# Runs typecheck + unit tests on every push and pull request targeting the
+# main and certforge-foundation branches, so PRs get green checks before merge.
+#
+# NOTE: this file currently lives at ci/ci.yml because the GitHub token used to
+# commit it lacked the `workflow` scope (which is required to write under
+# .github/workflows/ via the API). To ACTIVATE it, move it:
+#     mkdir -p .github/workflows && git mv ci/ci.yml .github/workflows/ci.yml
+# then commit and push. GitHub Actions only runs workflows under
+# .github/workflows/.
+on:
+  push:
+    branches: [main, certforge-foundation]
+  pull_request:
+    branches: [main, certforge-foundation]
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck & test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Use a clean, reproducible install. Falls back to `npm install` if no
+      # lockfile is committed yet (npm ci requires package-lock.json).
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        run: npm test

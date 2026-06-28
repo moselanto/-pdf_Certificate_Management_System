@@ -14,7 +14,7 @@
 // persists BOTH pages' placeholders together.
 // ============================================================================
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Placeholder, PlaceholderKind, PlaceholderPage } from "@/lib/domain/types";
 import { PlaceholderEditor } from "./PlaceholderEditor";
 import { FieldInspector } from "./FieldInspector";
@@ -46,6 +46,9 @@ const FIELD_PRESETS: Array<{ kind: PlaceholderKind; label: string; fieldKey: str
   { kind: "signature", label: "Trainer Signature", fieldKey: "trainer_signature" },
   { kind: "qr", label: "Verification QR", fieldKey: "qr_code" },
   { kind: "course_list", label: "Course List", fieldKey: "course_units" },
+  // Logo is an image placeholder; its picture is the template's uploaded logo
+  // (managed by the logo upload control), drawn into this box on every cert.
+  { kind: "image", label: "Logo", fieldKey: "logo" },
 ];
 
 export function TemplateDesigner({
@@ -67,6 +70,70 @@ export function TemplateDesigner({
   const [previewName, setPreviewName] = useState("Jane W. Mwangi");
   const [saving, setSaving] = useState(false);
   const [previewing, setPreviewing] = useState(false);
+
+  // --- Logo upload state ---------------------------------------------------
+  // The template carries ONE logo image; the "Logo" field (an image placeholder
+  // with fieldKey "logo") positions it. We load/upload/remove it here.
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [logoBusy, setLogoBusy] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+
+  // Load the current logo (if any) when the designer opens.
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/templates/${templateId}/logo`)
+      .then((r) => r.json())
+      .then((j) => !cancelled && setLogoUrl(j.logoUrl ?? null))
+      .catch(() => !cancelled && setLogoUrl(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [templateId]);
+
+  const uploadLogo = async (file: File) => {
+    setLogoBusy(true);
+    setLogoError(null);
+    try {
+      const form = new FormData();
+      form.append("logo", file);
+      const res = await fetch(`/api/templates/${templateId}/logo`, {
+        method: "POST",
+        body: form,
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error ?? "Logo upload failed");
+      setLogoUrl(j.logoUrl ?? null);
+    } catch (e) {
+      setLogoError((e as Error).message);
+    } finally {
+      setLogoBusy(false);
+      if (logoInputRef.current) logoInputRef.current.value = "";
+    }
+  };
+
+  const removeLogo = async () => {
+    setLogoBusy(true);
+    setLogoError(null);
+    try {
+      const res = await fetch(`/api/templates/${templateId}/logo`, { method: "DELETE" });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error ?? "Could not remove logo");
+      }
+      setLogoUrl(null);
+    } catch (e) {
+      setLogoError((e as Error).message);
+    } finally {
+      setLogoBusy(false);
+    }
+  };
+
+  // True once the user has added a "logo" placeholder to either page.
+  const hasLogoField = useMemo(
+    () => placeholders.some((p) => p.kind === "image" && p.fieldKey === "logo"),
+    [placeholders],
+  );
 
   const selected = useMemo(
     () => placeholders.find((p) => p.id === selectedId),
@@ -110,8 +177,22 @@ export function TemplateDesigner({
       label: isCourseList ? "Units Covered" : preset.label,
       x: Math.round(activeWidth / 2),
       y: Math.round(activeHeight / 2),
-      width: preset.kind === "qr" ? 64 : preset.kind === "signature" ? 120 : undefined,
-      height: preset.kind === "qr" ? 64 : preset.kind === "signature" ? 48 : undefined,
+      width:
+        preset.kind === "qr"
+          ? 64
+          : preset.kind === "signature"
+            ? 120
+            : preset.kind === "image"
+              ? 120
+              : undefined,
+      height:
+        preset.kind === "qr"
+          ? 64
+          : preset.kind === "signature"
+            ? 48
+            : preset.kind === "image"
+              ? 120
+              : undefined,
       fontSize: isCourseList ? 16 : 18,
       fontFamily: "Helvetica",
       color: "#111111",
@@ -201,6 +282,63 @@ export function TemplateDesigner({
               + {preset.label}
             </button>
           ))}
+        </div>
+
+        {/* Logo upload control */}
+        <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-4">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-white">
+              {logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={logoUrl} alt="Template logo" className="max-h-16 max-w-16 object-contain" />
+              ) : (
+                <span className="px-1 text-center text-[10px] text-gray-400">No logo</span>
+              )}
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-gray-800">Template logo</p>
+              <p className="text-xs text-gray-500">
+                Upload a logo (PNG or JPEG, under 2 MB), then add the{" "}
+                <span className="font-medium">+ Logo</span> field and drag it where you
+                want it. It prints on every certificate from this template.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                ref={logoInputRef}
+                type="file"
+                accept="image/png,image/jpeg"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) uploadLogo(f);
+                }}
+              />
+              <button
+                onClick={() => logoInputRef.current?.click()}
+                disabled={logoBusy}
+                className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+              >
+                {logoBusy ? "Working…" : logoUrl ? "Replace logo" : "Upload logo"}
+              </button>
+              {logoUrl && (
+                <button
+                  onClick={removeLogo}
+                  disabled={logoBusy}
+                  className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          </div>
+          {logoError && <p className="mt-2 text-xs text-red-600">{logoError}</p>}
+          {hasLogoField && !logoUrl && (
+            <p className="mt-2 text-xs text-amber-600">
+              You added a Logo field but haven&apos;t uploaded a logo yet — upload one
+              above or the box will print empty.
+            </p>
+          )}
         </div>
 
         <PlaceholderEditor

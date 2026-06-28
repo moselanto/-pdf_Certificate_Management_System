@@ -42,7 +42,7 @@ export async function generateCertificate(
   // 1. Load template + placeholders
   const { data: template, error: tErr } = await db
     .from("templates")
-    .select("id, front_pdf_path, back_pdf_path")
+    .select("id, front_pdf_path, back_pdf_path, logo_path")
     .eq("id", args.templateId)
     .single();
   if (tErr || !template) throw new Error(`template not found: ${tErr?.message}`);
@@ -112,6 +112,17 @@ export async function generateCertificate(
 
   const images: Record<string, Uint8Array> = { qr_code: qrBytes };
   if (signatureBytes) images.trainer_signature = signatureBytes;
+
+  // Template logo: if the template has an uploaded logo AND the designer placed
+  // a "logo" image placeholder, draw the logo into that box on every cert.
+  // Keyed "logo" to match the placeholder's fieldKey.
+  if (template.logo_path) {
+    try {
+      images.logo = await downloadTemplate(db, template.logo_path);
+    } catch {
+      /* logo optional — ignore if it can't be fetched */
+    }
+  }
 
   // 6. Render
   const frontPdf = await downloadTemplate(db, template.front_pdf_path);

@@ -1,4 +1,4 @@
-import { createServerClient } from "@supabase/ssr";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 
@@ -7,6 +7,9 @@ import { cookies } from "next/headers";
 //   - createSupabaseServiceClient(): service-role, BYPASSES RLS (server-only).
 // Pick the user-scoped client by default; reach for the service client only on
 // the public verification path and background jobs.
+
+// Shape of a single cookie passed to the SSR client's setAll callback.
+type CookieToSet = { name: string; value: string; options: CookieOptions };
 
 /**
  * Supabase client bound to the user's auth cookies. RLS applies — queries
@@ -21,7 +24,7 @@ export function createSupabaseServerClient() {
     {
       cookies: {
         getAll: () => cookieStore.getAll(),
-        setAll: (toSet) =>
+        setAll: (toSet: CookieToSet[]) =>
           toSet.forEach(({ name, value, options }) =>
             cookieStore.set(name, value, options),
           ),
@@ -35,7 +38,6 @@ export function createSupabaseServerClient() {
  * Used by the PUBLIC verification endpoint (no user session) and by background
  * bulk jobs. Always scope your queries manually when using this.
  */
-import { createClient } from "@supabase/supabase-js";
 export function createSupabaseServiceClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

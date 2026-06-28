@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@supabase/ssr";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
 
 // Refreshes the Supabase auth session on every request (following the official
 // @supabase/ssr pattern) and guards the authenticated app.
@@ -18,6 +18,9 @@ const PUBLIC_PREFIXES = [
   "/favicon",
 ];
 
+// Shape of a single cookie passed to the SSR client's setAll callback.
+type CookieToSet = { name: string; value: string; options: CookieOptions };
+
 export async function middleware(req: NextRequest) {
   let response = NextResponse.next({ request: { headers: req.headers } });
 
@@ -27,7 +30,7 @@ export async function middleware(req: NextRequest) {
     {
       cookies: {
         getAll: () => req.cookies.getAll(),
-        setAll: (cookiesToSet) => {
+        setAll: (cookiesToSet: CookieToSet[]) => {
           // Write to BOTH the request (for this pass) and the response (for
           // the browser + downstream handlers).
           cookiesToSet.forEach(({ name, value }) =>

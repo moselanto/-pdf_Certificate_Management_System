@@ -278,10 +278,12 @@ export async function POST(req: NextRequest) {
 
     // Auto-place the standard placeholders.
     const placeholders = defaultPlaceholders(pageW, pageH, !!input.includeBack);
+    // NOTE: the placeholders table has NO org_id column — rows are scoped via
+    // their parent template_id (RLS enforces the org). Column names mirror the
+    // designer's PUT /api/templates/[id]/placeholders insert exactly.
     const { error: phErr } = await db.from("placeholders").insert(
       placeholders.map((p) => ({
         template_id: tpl.id,
-        org_id: ctx.orgId,
         page: p.page,
         kind: p.kind,
         field_key: p.fieldKey,
@@ -294,6 +296,9 @@ export async function POST(req: NextRequest) {
         font_family: p.fontFamily,
         color: p.color,
         align: p.align,
+        qr_dark: p.qrDark ?? null,
+        qr_light: p.qrLight ?? null,
+        qr_transparent: p.qrTransparent ?? false,
       })),
     );
     if (phErr) throw new Error(`placeholder seed failed: ${phErr.message}`);

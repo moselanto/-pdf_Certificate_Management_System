@@ -1,9 +1,10 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { TEMPLATE_BUCKET } from "@/lib/supabase/storage";
 import { SettingsForm } from "./SettingsForm";
 
 // Settings: organisation name (used as the default "Issued by" on the public
-// verification page when a certificate's trainer has no institution) and a
-// couple of read-only account details.
+// verification page when a certificate's trainer has no institution), the
+// organisation default logo, and a couple of read-only account details.
 export default async function SettingsPage() {
   const db = createSupabaseServerClient();
 
@@ -11,6 +12,7 @@ export default async function SettingsPage() {
   let orgName = "";
   let role = "";
   let email = auth.user?.email ?? "";
+  let logoUrl: string | null = null;
 
   if (auth.user) {
     const { data: profile } = await db
@@ -22,10 +24,16 @@ export default async function SettingsPage() {
     if (profile?.org_id) {
       const { data: org } = await db
         .from("organizations")
-        .select("name")
+        .select("name, logo_path")
         .eq("id", profile.org_id)
         .single();
       orgName = (org?.name as string) ?? "";
+      if (org?.logo_path) {
+        const { data: signed } = await db.storage
+          .from(TEMPLATE_BUCKET)
+          .createSignedUrl(org.logo_path as string, 60 * 30);
+        logoUrl = signed?.signedUrl ?? null;
+      }
     }
   }
 
@@ -40,7 +48,12 @@ export default async function SettingsPage() {
         </p>
       </div>
 
-      <SettingsForm initialOrgName={orgName} email={email} role={role} />
+      <SettingsForm
+        initialOrgName={orgName}
+        initialLogoUrl={logoUrl}
+        email={email}
+        role={role}
+      />
     </div>
   );
 }

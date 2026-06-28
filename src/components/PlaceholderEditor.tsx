@@ -92,6 +92,11 @@ export function PlaceholderEditor({
     if (ph.kind === "qr" || ph.kind === "image" || ph.kind === "signature") {
       return "translate(0, 0)"; // images anchor at top-left like the engine
     }
+    // The course list is drawn from the TOP-LEFT of ph.(x,y) in the engine
+    // (the first line's top sits at ph.y). So anchor its chip top-left too,
+    // regardless of text align — its align only affects horizontal layout of
+    // each line within the block, which we don't simulate in the chip.
+    if (ph.kind === "course_list") return "translate(0, 0)";
     if (ph.align === "center") return "translate(-50%, 0)";
     if (ph.align === "right") return "translate(-100%, 0)";
     return "translate(0, 0)"; // left
@@ -136,9 +141,15 @@ export function PlaceholderEditor({
                 transform: anchorTransform(ph),
                 transformOrigin: "top left",
                 // Preview images at their real box size; text at its font size.
+                // For the course-list box we strip chip padding and show it at
+                // the real font size so its top-left exactly matches where the
+                // engine starts drawing (no drift between drag and print).
                 fontSize: isImage ? undefined : Math.max(9, ph.fontSize * scale),
                 width: isImage && ph.width ? ph.width * scale : undefined,
                 height: isImage && ph.height ? ph.height * scale : undefined,
+                padding: ph.kind === "course_list" ? 0 : undefined,
+                boxShadow: ph.kind === "course_list" ? "none" : undefined,
+                lineHeight: ph.kind === "course_list" ? 1 : undefined,
               }}
               title={`${ph.label} (${ph.kind}) — align: ${ph.align}`}
             >

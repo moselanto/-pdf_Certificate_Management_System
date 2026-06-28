@@ -7,6 +7,7 @@ export default function NewTrainerPage() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
+  const [institution, setInstitution] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -19,7 +20,11 @@ export default function NewTrainerPage() {
       const res = await fetch("/api/trainers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), title: title.trim() || undefined }),
+        body: JSON.stringify({
+          name: name.trim(),
+          title: title.trim() || undefined,
+          institution: institution.trim() || undefined,
+        }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Create failed");
@@ -54,6 +59,20 @@ export default function NewTrainerPage() {
             placeholder="Lead Trainer"
             className="mt-1 w-full rounded-lg border-gray-300 text-sm"
           />
+        </div>
+        <div>
+          <label className="block text-sm font-semibold text-gray-700">
+            Institution <span className="text-gray-400">(optional)</span>
+          </label>
+          <input
+            value={institution}
+            onChange={(e) => setInstitution(e.target.value)}
+            placeholder="Pimofy Training Institute"
+            className="mt-1 w-full rounded-lg border-gray-300 text-sm"
+          />
+          <p className="mt-1 text-xs text-gray-500">
+            Shown as &ldquo;Issued by&rdquo; on the certificate&apos;s verification page.
+          </p>
         </div>
         {error && (
           <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>

@@ -6,12 +6,13 @@ async function listTrainers(): Promise<TrainerCardData[]> {
   const db = createSupabaseServerClient();
   const { data } = await db
     .from("trainers")
-    .select("id, name, title, signature_path")
+    .select("id, name, title, institution, signature_path")
     .order("name");
   return (data ?? []).map((t) => ({
     id: t.id,
     name: t.name,
     title: (t.title as string | null) ?? null,
+    institution: (t.institution as string | null) ?? null,
     hasSignature: Boolean(t.signature_path),
   }));
 }

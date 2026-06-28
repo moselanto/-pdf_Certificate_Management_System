@@ -1,8 +1,8 @@
 "use client";
 
 // Trainer card with Edit (open detail/signature) + Delete actions, matching
-// the template card pattern. Shows signature status and (if present) a small
-// signature preview.
+// the template card pattern. Shows institution, signature status and (if
+// present) a small signature preview.
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -11,6 +11,7 @@ export interface TrainerCardData {
   id: string;
   name: string;
   title: string | null;
+  institution: string | null;
   hasSignature: boolean;
 }
 
@@ -48,6 +49,9 @@ export function TrainerCard({ trainer }: { trainer: TrainerCardData }) {
             {trainer.name}
           </h3>
           {trainer.title && <p className="text-xs text-gray-500">{trainer.title}</p>}
+          {trainer.institution && (
+            <p className="text-xs text-gray-400">{trainer.institution}</p>
+          )}
           <p className="mt-2 text-xs font-medium">
             {trainer.hasSignature ? (
               <span className="text-green-600">Signature uploaded</span>

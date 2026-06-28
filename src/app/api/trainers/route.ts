@@ -26,7 +26,7 @@ export async function GET() {
 
   const { data, error } = await db
     .from("trainers")
-    .select("id, name, title, signature_path, created_at")
+    .select("id, name, title, institution, signature_path, created_at")
     .order("name");
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json({ trainers: data });
@@ -35,6 +35,7 @@ export async function GET() {
 const createSchema = z.object({
   name: z.string().min(1),
   title: z.string().optional(),
+  institution: z.string().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -49,7 +50,12 @@ export async function POST(req: NextRequest) {
     const body = createSchema.parse(await req.json());
     const { data, error } = await db
       .from("trainers")
-      .insert({ org_id: ctx.orgId, name: body.name, title: body.title ?? null })
+      .insert({
+        org_id: ctx.orgId,
+        name: body.name,
+        title: body.title ?? null,
+        institution: body.institution ?? null,
+      })
       .select("id")
       .single();
     if (error || !data) throw new Error(error?.message ?? "create failed");

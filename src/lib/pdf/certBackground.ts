@@ -176,12 +176,35 @@ export async function drawCertBackground(
     drawCornerFlourish(page, inner + 6, H - inner - 6, accent, f); // top-left (arms up)
     drawCornerFlourish(page, W - inner - 6, H - inner - 6, accent, -f); // top-right
 
-    // Seal medallion at top center: concentric rings + a star.
+    // Seal medallion at top center: concentric rings + a vector star.
+    // NOTE: we draw the star with line segments (NOT a "★" text glyph) because
+    // pdf-lib's standard WinAnsi fonts cannot encode U+2605.
     const sx = W / 2;
     const sy = H - 78;
     page.drawCircle({ x: sx, y: sy, size: 26, borderColor: accent, borderWidth: 2.5, color: paper });
     page.drawCircle({ x: sx, y: sy, size: 18, borderColor: primary, borderWidth: 1.2 });
-    page.drawText("★", { x: sx - 8, y: sy - 9, size: 20, font: seal, color: accent });
+    drawStar(page, sx, sy, 13, accent);
+  }
+}
+
+/**
+ * Draw a filled-looking 5-pointed star centered at (cx, cy) using line
+ * segments between the outer points. Avoids any font glyph, so it is safe for
+ * pdf-lib's WinAnsi standard fonts.
+ */
+function drawStar(page: PDFPage, cx: number, cy: number, radius: number, color: RGB) {
+  const points: { x: number; y: number }[] = [];
+  // Five outer points, starting at the top (-90deg), every 72deg.
+  for (let i = 0; i < 5; i++) {
+    const angle = (-90 + i * 72) * (Math.PI / 180);
+    points.push({ x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) });
+  }
+  // Connect every other point (0->2->4->1->3->0) to form the classic star.
+  const order = [0, 2, 4, 1, 3, 0];
+  for (let i = 0; i < order.length - 1; i++) {
+    const a = points[order[i]];
+    const b = points[order[i + 1]];
+    page.drawLine({ start: a, end: b, thickness: 1.6, color });
   }
 }
 

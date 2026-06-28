@@ -206,7 +206,9 @@ export async function renderCertificate(input: RenderInput): Promise<Uint8Array>
       const gap = Math.max(4, Math.round(size * 0.5));
       const lineStep = size + gap;
       const maxWidth = listPh.width; // optional wrap width in points
-      const bullet = "•  ";
+      // WinAnsi-safe bullet: pdf-lib's standard fonts cannot encode U+2022 ("•"),
+      // so we use a hyphen marker that always renders.
+      const bullet = "-  ";
 
       // Top-left origin: listPh.y is where the title/first line's top sits.
       let topY = listPh.y;

@@ -5,6 +5,9 @@
 // If the layout includes a course-list box (or the template has a back page),
 // we inject SAMPLE course units so the back page renders in the preview the
 // same way it will at generation time.
+//
+// The template's uploaded logo is also injected (keyed "logo") so a placed Logo
+// field previews exactly as it will on the generated certificate.
 
 import { NextRequest, NextResponse } from "next/server";
 import { renderCertificate } from "@/lib/pdf/overlay";
@@ -37,7 +40,7 @@ export async function POST(req: NextRequest) {
 
     const { data: template, error } = await db
       .from("templates")
-      .select("front_pdf_path, back_pdf_path")
+      .select("front_pdf_path, back_pdf_path, logo_path")
       .eq("id", body.templateId)
       .single();
     if (error || !template) {
@@ -57,6 +60,18 @@ export async function POST(req: NextRequest) {
       light: qrPh?.qrTransparent ? "#00000000" : qrPh?.qrLight,
     });
 
+    const images: Record<string, Uint8Array> = { qr_code: qrBytes };
+
+    // Template logo: inject it so a placed "logo" field previews the same way
+    // it renders on the generated certificate (matches generateCertificate).
+    if (template.logo_path) {
+      try {
+        images.logo = await downloadTemplate(db, template.logo_path);
+      } catch {
+        /* logo optional — ignore if it can't be fetched */
+      }
+    }
+
     // Show sample units so the back page (course list box or auto back page)
     // is visible in the preview. Only inject when there's somewhere to draw
     // them: a course-list box, or an uploaded back page.
@@ -73,7 +88,7 @@ export async function POST(req: NextRequest) {
         id: p.id ?? Math.random().toString(36),
       })),
       values: body.values,
-      images: { qr_code: qrBytes },
+      images,
       units,
     });
 

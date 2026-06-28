@@ -9,6 +9,7 @@ const NAV = [
   { href: "/generate", label: "Generate Certificate" },
   { href: "/history", label: "Certificate History" },
   { href: "/import", label: "Bulk Import" },
+  { href: "/audit", label: "Activity Log" },
   { href: "/settings", label: "Settings" },
 ];
 

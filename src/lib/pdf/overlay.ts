@@ -163,46 +163,76 @@ export async function renderCertificate(input: RenderInput): Promise<Uint8Array>
   if (input.units?.length && backPage) {
     const pageHeight = backPage.getHeight();
     const pageWidth = backPage.getWidth();
-
-    // When we auto-created the back page, draw a centered heading and start the
-    // list a bit lower so it reads as a proper "Course Units" page. When the
-    // user supplied their own back design, honour the configured layout.
+    const color = hexToRgb(input.unitsLayout?.color ?? "#222222");
+    const font = await getFont("Helvetica");
     const headingFont = await getFont("Helvetica-Bold");
-    let startY = input.unitsLayout?.y ?? 200;
-    let startX = input.unitsLayout?.x ?? 72;
+    const sorted = [...input.units].sort((a, b) => a.sortOrder - b.sortOrder);
+    const count = sorted.length;
 
-    if (backWasAutoCreated) {
+    if (backWasAutoCreated || input.unitsLayout?.center) {
+      // AUTO-CREATED (or explicitly centered) back page:
+      // center the units block both horizontally (each line centered) and
+      // vertically, and scale the font DOWN as the list grows. Few units →
+      // large text; many units → smaller text so everything fits on one page.
       const heading = "Course Units";
-      const headingSize = 22;
+      const headingSize = 24;
       const hw = headingFont.widthOfTextAtSize(heading, headingSize);
+      const headingY = pageHeight - 96;
       backPage.drawText(heading, {
         x: (pageWidth - hw) / 2,
-        y: pageHeight - 90,
+        y: headingY,
         size: headingSize,
         font: headingFont,
         color: hexToRgb("#222222"),
       });
-      startY = 130; // top-left origin; list begins below the heading
-      startX = 90;
-    }
 
-    const size = input.unitsLayout?.fontSize ?? 13;
-    const gap = input.unitsLayout?.lineGap ?? 8;
-    const bullet = input.unitsLayout?.bullet ?? "•  ";
-    const color = hexToRgb(input.unitsLayout?.color ?? "#222222");
-    const font = await getFont("Helvetica");
+      // Dynamic sizing: big for few, smaller for many.
+      //   1-3 units → 26pt, then scales down, floored at 11pt for long lists.
+      const size = Math.max(11, Math.min(28, Math.round(96 / Math.max(3, count))));
+      const gap = Math.max(6, Math.round(size * 0.55));
+      const lineStep = size + gap;
 
-    const sorted = [...input.units].sort((a, b) => a.sortOrder - b.sortOrder);
-    sorted.forEach((unit, i) => {
-      const lineY = pageHeight - startY - i * (size + gap) - size;
-      backPage!.drawText(`${bullet}${unit.title}`, {
-        x: startX,
-        y: lineY,
-        size,
-        font,
-        color,
+      // Vertically center the block in the area below the heading.
+      const areaTop = headingY - 48; // a little gap under the heading
+      const areaBottom = 80; // bottom margin
+      const blockHeight = count * lineStep;
+      const areaMid = (areaTop + areaBottom) / 2;
+      // First baseline (pdf-lib bottom-left origin): start above the midpoint.
+      let baseline = areaMid + blockHeight / 2 - size;
+      if (baseline > areaTop - size) baseline = areaTop - size; // don't overlap heading
+
+      sorted.forEach((unit) => {
+        const line = `•  ${unit.title}`;
+        const w = font.widthOfTextAtSize(line, size);
+        backPage!.drawText(line, {
+          x: (pageWidth - w) / 2, // center each line on the page
+          y: baseline,
+          size,
+          font,
+          color,
+        });
+        baseline -= lineStep;
       });
-    });
+    } else {
+      // USER-SUPPLIED back design: honour the configured fixed layout so it
+      // lands exactly where their artwork expects it.
+      const startY = input.unitsLayout?.y ?? 200;
+      const startX = input.unitsLayout?.x ?? 72;
+      const size = input.unitsLayout?.fontSize ?? 13;
+      const gap = input.unitsLayout?.lineGap ?? 8;
+      const bullet = input.unitsLayout?.bullet ?? "•  ";
+
+      sorted.forEach((unit, i) => {
+        const lineY = pageHeight - startY - i * (size + gap) - size;
+        backPage!.drawText(`${bullet}${unit.title}`, {
+          x: startX,
+          y: lineY,
+          size,
+          font,
+          color,
+        });
+      });
+    }
   }
 
   return out.save();

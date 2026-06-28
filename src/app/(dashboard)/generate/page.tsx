@@ -2,13 +2,18 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { GenerateForm } from "./GenerateForm";
 
 // Loads the option lists (templates, courses, trainers, trainees) server-side
-// so the generate form is ready to use immediately.
+// so the generate form is ready to use immediately. Archived templates are
+// excluded so you can't generate from a retired design.
 export default async function GeneratePage() {
   const db = createSupabaseServerClient();
 
   const [{ data: templates }, { data: courses }, { data: trainers }, { data: trainees }] =
     await Promise.all([
-      db.from("templates").select("id, name").order("name"),
+      db
+        .from("templates")
+        .select("id, name")
+        .is("archived_at", null)
+        .order("name"),
       db.from("courses").select("id, title").order("title"),
       db.from("trainers").select("id, name").order("name"),
       db.from("trainees").select("id, name, email").order("name"),

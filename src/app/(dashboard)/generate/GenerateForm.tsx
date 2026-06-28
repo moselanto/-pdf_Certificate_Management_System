@@ -214,8 +214,16 @@ export function GenerateForm({
           </p>
           <div className="mt-4 flex flex-wrap gap-3">
             <a
-              href={`/api/certificates/${result.id}/download`}
+              href={`/api/certificates/${result.id}/download?inline=1`}
+              target="_blank"
+              rel="noreferrer"
               className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
+            >
+              Preview PDF
+            </a>
+            <a
+              href={`/api/certificates/${result.id}/download`}
+              className="rounded-lg border border-brand-600 px-4 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50"
             >
               Download PDF
             </a>

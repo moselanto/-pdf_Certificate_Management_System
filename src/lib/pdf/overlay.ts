@@ -171,9 +171,11 @@ export async function renderCertificate(input: RenderInput): Promise<Uint8Array>
 
     if (backWasAutoCreated || input.unitsLayout?.center) {
       // AUTO-CREATED (or explicitly centered) back page:
-      // center the units block both horizontally (each line centered) and
-      // vertically, and scale the font DOWN as the list grows. Few units →
-      // large text; many units → smaller text so everything fits on one page.
+      // - centered heading + subtitle + a thin divider line
+      // - units are LEFT-ALIGNED to a common left edge, but the whole block is
+      //   CENTERED on the page (left edge = (pageWidth - widestLine) / 2), which
+      //   reads better for long unit titles than per-line centering.
+      // - font scales DOWN as the list grows so it always fits on one page.
       const heading = "Course Units";
       const headingSize = 24;
       const hw = headingFont.widthOfTextAtSize(heading, headingSize);
@@ -186,26 +188,54 @@ export async function renderCertificate(input: RenderInput): Promise<Uint8Array>
         color: hexToRgb("#222222"),
       });
 
-      // Dynamic sizing: big for few, smaller for many.
-      //   1-3 units → 26pt, then scales down, floored at 11pt for long lists.
-      const size = Math.max(11, Math.min(28, Math.round(96 / Math.max(3, count))));
+      // Subtitle under the heading.
+      const subtitle = "This certifies completion of the following units:";
+      const subtitleSize = 12;
+      const sw = font.widthOfTextAtSize(subtitle, subtitleSize);
+      const subtitleY = headingY - 26;
+      backPage.drawText(subtitle, {
+        x: (pageWidth - sw) / 2,
+        y: subtitleY,
+        size: subtitleSize,
+        font,
+        color: hexToRgb("#555555"),
+      });
+
+      // Thin divider line below the subtitle.
+      const dividerY = subtitleY - 14;
+      const dividerHalf = Math.min(pageWidth * 0.32, 230);
+      backPage.drawLine({
+        start: { x: pageWidth / 2 - dividerHalf, y: dividerY },
+        end: { x: pageWidth / 2 + dividerHalf, y: dividerY },
+        thickness: 0.75,
+        color: hexToRgb("#C9A227"),
+      });
+
+      // Dynamic sizing: big for few, smaller for many (clamped 11-26pt).
+      const size = Math.max(11, Math.min(26, Math.round(90 / Math.max(3, count))));
       const gap = Math.max(6, Math.round(size * 0.55));
       const lineStep = size + gap;
 
-      // Vertically center the block in the area below the heading.
-      const areaTop = headingY - 48; // a little gap under the heading
-      const areaBottom = 80; // bottom margin
+      // Compute the widest line so we can left-align all lines to one edge while
+      // keeping the block centered on the page.
+      const lines = sorted.map((u) => `•  ${u.title}`);
+      const widest = lines.reduce(
+        (m, l) => Math.max(m, font.widthOfTextAtSize(l, size)),
+        0,
+      );
+      const blockLeft = Math.max(64, (pageWidth - widest) / 2);
+
+      // Vertically center the block in the area below the divider.
+      const areaTop = dividerY - 28;
+      const areaBottom = 80;
       const blockHeight = count * lineStep;
       const areaMid = (areaTop + areaBottom) / 2;
-      // First baseline (pdf-lib bottom-left origin): start above the midpoint.
       let baseline = areaMid + blockHeight / 2 - size;
-      if (baseline > areaTop - size) baseline = areaTop - size; // don't overlap heading
+      if (baseline > areaTop - size) baseline = areaTop - size;
 
-      sorted.forEach((unit) => {
-        const line = `•  ${unit.title}`;
-        const w = font.widthOfTextAtSize(line, size);
+      lines.forEach((line) => {
         backPage!.drawText(line, {
-          x: (pageWidth - w) / 2, // center each line on the page
+          x: blockLeft, // left-aligned, but block is centered as a group
           y: baseline,
           size,
           font,

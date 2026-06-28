@@ -1,6 +1,7 @@
 "use client";
 
 // Side panel to edit the properties of the selected placeholder.
+import { useEffect, useState } from "react";
 import type { Placeholder, PlaceholderKind, TextAlign } from "@/lib/domain/types";
 
 interface Props {
@@ -11,9 +12,29 @@ interface Props {
 
 const KINDS: PlaceholderKind[] = ["text", "date", "qr", "image", "signature", "course_list"];
 const ALIGNS: TextAlign[] = ["left", "center", "right"];
-const FONTS = ["Helvetica", "Helvetica-Bold", "Times", "Courier"];
+const STANDARD_FONTS = ["Helvetica", "Helvetica-Bold", "Times", "Courier"];
 
 export function FieldInspector({ placeholder, onChange, onDelete }: Props) {
+  // Custom fonts uploaded in Settings extend the standard font list so a text
+  // field can be set to print with an embedded typeface.
+  const [customFonts, setCustomFonts] = useState<string[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/fonts")
+      .then((r) => (r.ok ? r.json() : { fonts: [] }))
+      .then((j) => {
+        if (!cancelled) {
+          setCustomFonts(
+            (j.fonts ?? []).map((f: { family: string }) => f.family),
+          );
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const FONTS = [...STANDARD_FONTS, ...customFonts];
   if (!placeholder) {
     return (
       <div className="rounded-lg border border-dashed border-gray-300 p-6 text-sm text-gray-500">

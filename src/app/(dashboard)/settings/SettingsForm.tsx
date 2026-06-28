@@ -5,7 +5,7 @@
 // fallback for any template with a placed Logo field but no template-specific
 // logo), plus read-only account info. Saves via PATCH/POST/DELETE /api/settings.
 
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 export function SettingsForm({
@@ -64,6 +64,65 @@ export function SettingsForm({
       setLogoError((err as Error).message);
     } finally {
       setLogoBusy(false);
+    }
+  };
+
+  // Custom fonts state.
+  const [fonts, setFonts] = useState<{ id: string; family: string }[]>([]);
+  const [fontFamily, setFontFamily] = useState("");
+  const [fontBusy, setFontBusy] = useState(false);
+  const [fontError, setFontError] = useState<string | null>(null);
+  const fontFileRef = useRef<HTMLInputElement>(null);
+
+  const loadFonts = useCallback(async () => {
+    try {
+      const res = await fetch("/api/fonts");
+      const json = await res.json().catch(() => ({}));
+      if (res.ok) setFonts(json.fonts ?? []);
+    } catch {
+      /* non-fatal */
+    }
+  }, []);
+
+  useEffect(() => {
+    loadFonts();
+  }, [loadFonts]);
+
+  const uploadFont = async () => {
+    setFontError(null);
+    const file = fontFileRef.current?.files?.[0];
+    if (!fontFamily.trim()) return setFontError("Give the font a name (e.g. “Great Vibes”).");
+    if (!file) return setFontError("Choose a .ttf or .otf file.");
+    setFontBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("family", fontFamily.trim());
+      fd.append("font", file);
+      const res = await fetch("/api/fonts", { method: "POST", body: fd });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "Font upload failed");
+      setFontFamily("");
+      if (fontFileRef.current) fontFileRef.current.value = "";
+      await loadFonts();
+    } catch (err) {
+      setFontError((err as Error).message);
+    } finally {
+      setFontBusy(false);
+    }
+  };
+
+  const removeFont = async (id: string) => {
+    setFontError(null);
+    setFontBusy(true);
+    try {
+      const res = await fetch(`/api/fonts?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "Remove failed");
+      await loadFonts();
+    } catch (err) {
+      setFontError((err as Error).message);
+    } finally {
+      setFontBusy(false);
     }
   };
 
@@ -176,6 +235,65 @@ export function SettingsForm({
         )}
         {!canEdit && (
           <p className="text-xs text-gray-400">Only an owner or admin can change the default logo.</p>
+        )}
+      </div>
+
+      <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-6">
+        <h3 className="text-sm font-semibold text-gray-900">Custom fonts</h3>
+        <p className="text-xs text-gray-500">
+          Upload a TrueType (.ttf) or OpenType (.otf) font, then reference its
+          name from a text field&apos;s Font in the template designer to print
+          with it. Falls back to a standard font if a font is missing. Under
+          2&nbsp;MB.
+        </p>
+
+        {fonts.length > 0 ? (
+          <ul className="divide-y divide-gray-100 rounded-lg border border-gray-100">
+            {fonts.map((f) => (
+              <li key={f.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                <span className="font-medium text-gray-800">{f.family}</span>
+                <button
+                  type="button"
+                  onClick={() => removeFont(f.id)}
+                  disabled={fontBusy}
+                  className="text-xs font-medium text-red-600 hover:underline disabled:opacity-50"
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-xs text-gray-400">No custom fonts yet.</p>
+        )}
+
+        <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+          <div>
+            <label className="block text-xs font-semibold text-gray-700">Font name</label>
+            <input
+              value={fontFamily}
+              onChange={(e) => setFontFamily(e.target.value)}
+              placeholder="e.g. Great Vibes"
+              className="mt-1 w-full rounded-lg border-gray-300 text-sm"
+            />
+          </div>
+          <input
+            ref={fontFileRef}
+            type="file"
+            accept=".ttf,.otf,font/ttf,font/otf"
+            className="text-xs text-gray-600 file:mr-2 file:rounded-md file:border-0 file:bg-gray-200 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-gray-700 hover:file:bg-gray-300"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={uploadFont}
+          disabled={fontBusy}
+          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+        >
+          {fontBusy ? "Working…" : "Upload font"}
+        </button>
+        {fontError && (
+          <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{fontError}</div>
         )}
       </div>
 

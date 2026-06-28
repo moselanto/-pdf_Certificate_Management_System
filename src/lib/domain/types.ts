@@ -57,6 +57,13 @@ export interface RenderInput {
   values: Record<string, string>;
   /** Pre-rendered PNG bytes keyed by fieldKey, for qr / image / signature. */
   images?: Record<string, Uint8Array>;
+  /**
+   * Custom font files keyed by family name (the same string a placeholder sets
+   * as fontFamily). When a placeholder's fontFamily matches a key here, the
+   * engine embeds that TrueType/OpenType font via fontkit instead of mapping to
+   * a standard font. Resolution is case-insensitive on the family name.
+   */
+  customFonts?: Record<string, Uint8Array>;
   /** Course units rendered as a list onto the back page (if any). */
   units?: CourseUnit[];
   /** Where the units list is anchored on the back page (top-left origin). */

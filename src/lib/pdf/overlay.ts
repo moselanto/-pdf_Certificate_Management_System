@@ -29,6 +29,7 @@ import {
   type PDFPage,
   type RGB,
 } from "pdf-lib";
+import fontkit from "@pdf-lib/fontkit";
 import type { Placeholder, RenderInput } from "@/lib/domain/types";
 
 function hexToRgb(hex: string): RGB {
@@ -157,8 +158,40 @@ export async function renderCertificate(input: RenderInput): Promise<Uint8Array>
     backPage = out.addPage(bp);
   }
 
-  const fontCache = new Map<StandardFonts, PDFFont>();
-  const getFont = async (family: string) => {
+  // Custom-font support: register fontkit once (only needed when custom fonts
+  // are supplied) so out.embedFont can ingest raw TTF/OTF bytes.
+  const customFonts = input.customFonts ?? {};
+  // Normalise the supplied family names for case-insensitive lookup.
+  const customByLower = new Map<string, Uint8Array>();
+  for (const [family, bytes] of Object.entries(customFonts)) {
+    customByLower.set(family.toLowerCase(), bytes);
+  }
+  if (customByLower.size > 0) {
+    out.registerFontkit(fontkit);
+  }
+
+  // Cache by the resolved cache key (a StandardFonts enum value OR the custom
+  // family's lowercased name) so each font is embedded at most once.
+  const fontCache = new Map<string, PDFFont>();
+  const getFont = async (family: string): Promise<PDFFont> => {
+    const lower = (family ?? "").toLowerCase();
+    // 1. A custom uploaded font wins when its family matches.
+    const customBytes = customByLower.get(lower);
+    if (customBytes) {
+      if (!fontCache.has(lower)) {
+        try {
+          fontCache.set(lower, await out.embedFont(customBytes, { subset: true }));
+        } catch {
+          // Corrupt/unsupported font — fall back to a standard font so the
+          // certificate still renders rather than failing the whole batch.
+          const key = standardFontFor(family);
+          if (!fontCache.has(key)) fontCache.set(key, await out.embedFont(key));
+          return fontCache.get(key)!;
+        }
+      }
+      return fontCache.get(lower)!;
+    }
+    // 2. Otherwise map to a standard font.
     const key = standardFontFor(family);
     if (!fontCache.has(key)) fontCache.set(key, await out.embedFont(key));
     return fontCache.get(key)!;

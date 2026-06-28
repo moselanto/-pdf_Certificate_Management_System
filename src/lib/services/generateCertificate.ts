@@ -142,7 +142,29 @@ export async function generateCertificate(
     }
   }
 
-  // 6. Render
+  // 6. Resolve any custom fonts referenced by the placeholders. We only fetch
+  //    fonts whose family is actually used, embedding them by family name so
+  //    the engine can pick them over the standard fonts. Missing/failed fonts
+  //    simply fall back to a standard font in the engine.
+  const customFonts: Record<string, Uint8Array> = {};
+  const usedFamilies = Array.from(
+    new Set(placeholders.map((p) => p.fontFamily).filter(Boolean)),
+  );
+  if (usedFamilies.length) {
+    const { data: fontRows } = await db
+      .from("fonts")
+      .select("family, file_path")
+      .in("family", usedFamilies);
+    for (const f of fontRows ?? []) {
+      try {
+        customFonts[f.family] = await downloadTemplate(db, f.file_path);
+      } catch {
+        /* font optional — engine falls back to a standard font */
+      }
+    }
+  }
+
+  // 7. Render
   const frontPdf = await downloadTemplate(db, template.front_pdf_path);
   const backPdf = template.back_pdf_path
     ? await downloadTemplate(db, template.back_pdf_path)
@@ -156,6 +178,7 @@ export async function generateCertificate(
     images,
     units,
     unitsLayout: { x: 72, y: 220, fontSize: 12, lineGap: 8 },
+    customFonts,
   });
 
   // 7. Persist PDF + DB row

@@ -90,7 +90,9 @@ export function TemplateDesigner({
       page: isCourseList ? "back" : activePage,
       kind: preset.kind,
       fieldKey: preset.fieldKey,
-      label: preset.label,
+      // For the course list, the label doubles as the printed TITLE shown above
+      // the units, so default it to "Units Covered" rather than "Course List".
+      label: isCourseList ? "Units Covered" : preset.label,
       x: Math.round(pageWidth / 2),
       y: Math.round(pageHeight / 2),
       width: preset.kind === "qr" ? 64 : preset.kind === "signature" ? 120 : undefined,

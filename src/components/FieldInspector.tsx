@@ -97,6 +97,12 @@ export function FieldInspector({ placeholder, onChange, onDelete }: Props) {
             The selected course&apos;s units render here at generation time. Drag
             to position, then set the font size and wrap width below.
           </p>
+          <p className="rounded bg-white/70 px-2 py-1.5 text-[11px] text-gray-600">
+            <span className="font-semibold">Title:</span> the{" "}
+            <span className="font-semibold">Label</span> field above is printed
+            as a bold title over the list (e.g. &ldquo;Units Covered&rdquo;).
+            Clear it to show no title.
+          </p>
           <div>
             <label className="block text-xs font-semibold text-gray-600">
               Font size — {p.fontSize} pt

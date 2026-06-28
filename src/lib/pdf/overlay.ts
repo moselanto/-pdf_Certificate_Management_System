@@ -208,8 +208,33 @@ export async function renderCertificate(input: RenderInput): Promise<Uint8Array>
       const maxWidth = listPh.width; // optional wrap width in points
       const bullet = "•  ";
 
-      // Top-left origin: listPh.y is where the first line's top sits.
+      // Top-left origin: listPh.y is where the title/first line's top sits.
       let topY = listPh.y;
+
+      // Optional TITLE above the list. The box's `label` is used as the title
+      // (e.g. "Units Covered"). We skip the generic default "Course List" so an
+      // untitled box stays untitled. Title is bold and ~1.4x the unit size,
+      // aligned the same way (left/center/right) as the list.
+      const titleText = (listPh.label ?? "").trim();
+      const showTitle = titleText && titleText.toLowerCase() !== "course list";
+      if (showTitle) {
+        const titleSize = Math.round(size * 1.4);
+        const tw = headingFont.widthOfTextAtSize(titleText, titleSize);
+        let tx = listPh.x;
+        if (listPh.align === "center") tx = listPh.x - tw / 2;
+        else if (listPh.align === "right") tx = listPh.x - tw;
+        const tyBaseline = pageHeight - topY - titleSize;
+        backPage.drawText(titleText, {
+          x: tx,
+          y: tyBaseline,
+          size: titleSize,
+          font: headingFont,
+          color,
+        });
+        // Advance below the title (title height + a little breathing room).
+        topY += titleSize + Math.max(6, Math.round(size * 0.6));
+      }
+
       for (const unit of sorted) {
         const full = `${bullet}${unit.title}`;
         // Simple width-based wrapping when a width is set.

@@ -28,6 +28,11 @@ export function TemplateDesignerClient({
 }: Props) {
   const [pageImageUrl, setPageImageUrl] = useState<string | null>(null);
   const [backImageUrl, setBackImageUrl] = useState<string | null>(null);
+  // Back page can be a DIFFERENT size than the front. We capture its real
+  // dimensions from the rasterizer so the editor scales the back canvas to the
+  // back page — otherwise fields placed on the back drift vertically because
+  // the engine uses the back page's true height.
+  const [backSize, setBackSize] = useState<{ width: number; height: number } | null>(null);
   const [placeholders, setPlaceholders] = useState<Placeholder[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,19 +54,27 @@ export function TemplateDesignerClient({
   }, [frontPdfUrl]);
 
   // Rasterize the back backdrop, if a back PDF exists. Best-effort: failure
-  // just leaves the back canvas blank (the toggle still works).
+  // just leaves the back canvas blank (the toggle still works). We also capture
+  // the back page's real point dimensions for correct back-page scaling.
   useEffect(() => {
     let cancelled = false;
     if (!backPdfUrl) {
       setBackImageUrl(null);
+      setBackSize(null);
       return;
     }
     rasterizeFirstPage(backPdfUrl)
       .then((r) => {
-        if (!cancelled) setBackImageUrl(r.dataUrl);
+        if (!cancelled) {
+          setBackImageUrl(r.dataUrl);
+          setBackSize({ width: r.widthPt, height: r.heightPt });
+        }
       })
       .catch(() => {
-        if (!cancelled) setBackImageUrl(null);
+        if (!cancelled) {
+          setBackImageUrl(null);
+          setBackSize(null);
+        }
       });
     return () => {
       cancelled = true;
@@ -113,6 +126,8 @@ export function TemplateDesignerClient({
       hasBackPdf={Boolean(backPdfUrl)}
       pageWidth={pageWidth}
       pageHeight={pageHeight}
+      backPageWidth={backSize?.width}
+      backPageHeight={backSize?.height}
       initialPlaceholders={placeholders}
       onSave={save}
     />

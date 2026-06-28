@@ -29,6 +29,10 @@ interface Props {
   hasBackPdf?: boolean;
   pageWidth: number;
   pageHeight: number;
+  // The back page may be a different size than the front; when known, the back
+  // canvas scales to these so back fields don't drift vertically.
+  backPageWidth?: number;
+  backPageHeight?: number;
   initialPlaceholders?: Placeholder[];
   onSave: (placeholders: Placeholder[]) => Promise<void>;
 }
@@ -51,6 +55,8 @@ export function TemplateDesigner({
   hasBackPdf = false,
   pageWidth,
   pageHeight,
+  backPageWidth,
+  backPageHeight,
   initialPlaceholders = [],
   onSave,
 }: Props) {
@@ -81,6 +87,15 @@ export function TemplateDesigner({
       ? backImageUrl ?? BLANK_PAGE
       : pageImageUrl;
 
+  // Use the ACTIVE page's real dimensions. The back page can be a different
+  // size than the front; scaling the back canvas to the front size is what made
+  // back fields drift to the bottom. Fall back to front size when back size is
+  // unknown (e.g. no back PDF — the auto back page matches the front size).
+  const activeWidth =
+    activePage === "back" ? backPageWidth ?? pageWidth : pageWidth;
+  const activeHeight =
+    activePage === "back" ? backPageHeight ?? pageHeight : pageHeight;
+
   const addField = (preset: (typeof FIELD_PRESETS)[number]) => {
     const isCourseList = preset.kind === "course_list";
     const ph: Placeholder = {
@@ -93,8 +108,8 @@ export function TemplateDesigner({
       // For the course list, the label doubles as the printed TITLE shown above
       // the units, so default it to "Units Covered" rather than "Course List".
       label: isCourseList ? "Units Covered" : preset.label,
-      x: Math.round(pageWidth / 2),
-      y: Math.round(pageHeight / 2),
+      x: Math.round(activeWidth / 2),
+      y: Math.round(activeHeight / 2),
       width: preset.kind === "qr" ? 64 : preset.kind === "signature" ? 120 : undefined,
       height: preset.kind === "qr" ? 64 : preset.kind === "signature" ? 48 : undefined,
       fontSize: isCourseList ? 16 : 18,
@@ -191,8 +206,8 @@ export function TemplateDesigner({
         <PlaceholderEditor
           key={activePage}
           pageImageUrl={backdrop}
-          pageWidth={pageWidth}
-          pageHeight={pageHeight}
+          pageWidth={activeWidth}
+          pageHeight={activeHeight}
           placeholders={visiblePlaceholders}
           onChange={(updatedVisible) => {
             // Merge edits to the visible (active-page) set back into the full

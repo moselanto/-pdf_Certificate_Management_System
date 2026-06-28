@@ -1,7 +1,8 @@
 "use client";
 
-// Searchable trainee directory with inline create. Uses GET /api/trainees?q=
-// (debounced) and POST /api/trainees.
+// Searchable trainee directory with inline create, edit, and delete. Uses
+// GET /api/trainees?q= (debounced), POST /api/trainees, and
+// PATCH/DELETE /api/trainees/[id].
 
 import { useCallback, useEffect, useState } from "react";
 
@@ -21,6 +22,13 @@ export function TraineesDirectory() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [creating, setCreating] = useState(false);
+
+  // inline-edit state
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const load = useCallback(async (query: string) => {
     setLoading(true);
@@ -64,12 +72,61 @@ export function TraineesDirectory() {
       if (!res.ok) throw new Error(json.error ?? "Create failed");
       setName("");
       setEmail("");
-      // Prepend the new trainee.
       setRows((r) => [json.trainee, ...r]);
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setCreating(false);
+    }
+  };
+
+  const startEdit = (t: Trainee) => {
+    setError(null);
+    setEditingId(t.id);
+    setEditName(t.name);
+    setEditEmail(t.email ?? "");
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditName("");
+    setEditEmail("");
+  };
+
+  const saveEdit = async (id: string) => {
+    setError(null);
+    if (!editName.trim()) return setError("Name can't be empty.");
+    setSavingId(id);
+    try {
+      const res = await fetch(`/api/trainees/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: editName.trim(), email: editEmail.trim() }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Update failed");
+      setRows((r) => r.map((t) => (t.id === id ? json.trainee : t)));
+      cancelEdit();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const remove = async (t: Trainee) => {
+    if (!confirm(`Delete trainee "${t.name}"? This cannot be undone.`)) return;
+    setError(null);
+    setDeletingId(t.id);
+    try {
+      const res = await fetch(`/api/trainees/${t.id}`, { method: "DELETE" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "Delete failed");
+      setRows((r) => r.filter((row) => row.id !== t.id));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -118,26 +175,83 @@ export function TraineesDirectory() {
             <tr>
               <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Email</th>
+              <th className="px-4 py-3 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {loading ? (
               <tr>
-                <td colSpan={2} className="px-4 py-8 text-center text-gray-400">Loading…</td>
+                <td colSpan={3} className="px-4 py-8 text-center text-gray-400">Loading…</td>
               </tr>
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={2} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={3} className="px-4 py-8 text-center text-gray-400">
                   No trainees yet.
                 </td>
               </tr>
             ) : (
-              rows.map((t) => (
-                <tr key={t.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-gray-900">{t.name}</td>
-                  <td className="px-4 py-3 text-gray-600">{t.email ?? "—"}</td>
-                </tr>
-              ))
+              rows.map((t) =>
+                editingId === t.id ? (
+                  <tr key={t.id} className="bg-brand-50/40">
+                    <td className="px-4 py-2">
+                      <input
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        className="w-full rounded-lg border-gray-300 text-sm"
+                        placeholder="Full name"
+                      />
+                    </td>
+                    <td className="px-4 py-2">
+                      <input
+                        value={editEmail}
+                        onChange={(e) => setEditEmail(e.target.value)}
+                        type="email"
+                        className="w-full rounded-lg border-gray-300 text-sm"
+                        placeholder="Email (optional)"
+                      />
+                    </td>
+                    <td className="px-4 py-2">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          onClick={() => saveEdit(t.id)}
+                          disabled={savingId === t.id}
+                          className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+                        >
+                          {savingId === t.id ? "Saving…" : "Save"}
+                        </button>
+                        <button
+                          onClick={cancelEdit}
+                          className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  <tr key={t.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium text-gray-900">{t.name}</td>
+                    <td className="px-4 py-3 text-gray-600">{t.email ?? "—"}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          onClick={() => startEdit(t)}
+                          className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => remove(t)}
+                          disabled={deletingId === t.id}
+                          className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                        >
+                          {deletingId === t.id ? "Deleting…" : "Delete"}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ),
+              )
             )}
           </tbody>
         </table>

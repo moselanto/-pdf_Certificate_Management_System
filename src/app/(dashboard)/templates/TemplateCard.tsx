@@ -1,11 +1,12 @@
 "use client";
 
-// A single template card: shows a rasterized thumbnail of the uploaded front
-// PDF (via pdf.js), with Edit (open designer) and Delete actions.
+// A single template card. The thumbnail shows the uploaded front PDF directly
+// in an <iframe> using the browser's built-in PDF viewer — no pdf.js / worker,
+// so it works reliably everywhere (including Codespaces). Edit opens the
+// designer; Delete removes the template.
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { rasterizeFirstPage } from "@/lib/pdf/rasterize";
 
 export interface TemplateCardData {
   id: string;
@@ -17,13 +18,12 @@ export interface TemplateCardData {
 
 export function TemplateCard({ template }: { template: TemplateCardData }) {
   const router = useRouter();
-  const [thumb, setThumb] = useState<string | null>(null);
-  const [thumbError, setThumbError] = useState(false);
+  const [frontUrl, setFrontUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const loaded = useRef(false);
 
-  // Fetch a signed URL for the front PDF, then rasterize its first page.
   useEffect(() => {
     if (loaded.current) return;
     loaded.current = true;
@@ -34,16 +34,17 @@ export function TemplateCard({ template }: { template: TemplateCardData }) {
         const json = await res.json();
         const url = json?.template?.frontUrl as string | null;
         if (!url) throw new Error("no url");
-        const r = await rasterizeFirstPage(url, 1.2);
-        if (!cancelled) setThumb(r.dataUrl);
+        if (!cancelled) setFrontUrl(url);
       } catch {
-        if (!cancelled) setThumbError(true);
+        if (!cancelled) setFailed(true);
       }
     })();
     return () => {
       cancelled = true;
     };
   }, [template.id]);
+
+  const openEditor = () => router.push(`/templates/${template.id}`);
 
   const onDelete = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -61,25 +62,34 @@ export function TemplateCard({ template }: { template: TemplateCardData }) {
     }
   };
 
-  const openEditor = () => router.push(`/templates/${template.id}`);
-
   return (
     <div className="group flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white hover:border-brand-300 hover:shadow-sm">
-      {/* Thumbnail */}
-      <button
+      {/* Thumbnail — PDF first page via the browser's native viewer */}
+      <div
+        className="relative h-40 cursor-pointer overflow-hidden bg-gray-100"
         onClick={openEditor}
-        className="relative flex h-40 items-center justify-center overflow-hidden bg-gray-50"
         title="Open designer"
       >
-        {thumb ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={thumb} alt={template.name} className="h-full w-full object-contain" />
-        ) : thumbError ? (
-          <span className="text-xs text-gray-400">Preview unavailable</span>
+        {frontUrl ? (
+          <>
+            <iframe
+              src={`${frontUrl}#toolbar=0&navpanes=0&scrollbar=0&view=Fit`}
+              title={template.name}
+              className="pointer-events-none h-[200%] w-[200%] origin-top-left scale-50 border-0"
+            />
+            {/* Transparent overlay so clicks open the editor, not the PDF */}
+            <div className="absolute inset-0" />
+          </>
+        ) : failed ? (
+          <div className="flex h-full items-center justify-center text-xs text-gray-400">
+            Preview unavailable
+          </div>
         ) : (
-          <span className="text-xs text-gray-400">Loading preview…</span>
+          <div className="flex h-full items-center justify-center text-xs text-gray-400">
+            Loading preview…
+          </div>
         )}
-      </button>
+      </div>
 
       {/* Body */}
       <div className="flex flex-1 flex-col p-4">

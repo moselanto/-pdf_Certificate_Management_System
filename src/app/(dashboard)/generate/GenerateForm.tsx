@@ -2,7 +2,8 @@
 
 // The one-minute certificate flow: choose template + course + trainer, type
 // the recipient + issue date, click Generate. On success we show the
-// certificate number, a verification link, and a download button.
+// certificate number, a verification link, a download button, and a small
+// inline "email this certificate" widget.
 
 import { useState } from "react";
 
@@ -176,6 +177,65 @@ export function GenerateForm({
           <EmailCertificate certificateId={result.id} />
         </div>
       )}
+    </div>
+  );
+}
+
+// Inline "email this certificate" widget. Calls POST /api/certificates/[id]/email.
+// Leave the address blank to send to the linked trainee's email; or type an
+// address to override. Optional — generation already succeeded by this point.
+function EmailCertificate({ certificateId }: { certificateId: string }) {
+  const [to, setTo] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const send = async () => {
+    setSending(true);
+    setErr(null);
+    setSent(null);
+    try {
+      const res = await fetch(`/api/certificates/${certificateId}/email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(to.trim() ? { to: to.trim() } : {}),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "Email failed");
+      setSent(json.to ?? to.trim() ?? "recipient");
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="mt-5 border-t border-green-200 pt-4">
+      <p className="text-sm font-semibold text-green-800">Email this certificate</p>
+      <p className="mt-0.5 text-xs text-green-700">
+        Leave blank to send to the linked trainee, or enter an address to override.
+      </p>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <input
+          value={to}
+          onChange={(e) => setTo(e.target.value)}
+          type="email"
+          placeholder="name@example.com (optional)"
+          className="min-w-[16rem] flex-1 rounded-lg border-gray-300 text-sm"
+        />
+        <button
+          onClick={send}
+          disabled={sending}
+          className="rounded-lg border border-green-600 px-4 py-2 text-sm font-semibold text-green-700 hover:bg-green-100 disabled:opacity-50"
+        >
+          {sending ? "Sending…" : "Send email"}
+        </button>
+      </div>
+      {sent && (
+        <p className="mt-2 text-xs font-medium text-green-700">Sent to {sent}.</p>
+      )}
+      {err && <p className="mt-2 text-xs text-red-600">{err}</p>}
     </div>
   );
 }

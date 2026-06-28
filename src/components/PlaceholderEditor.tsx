@@ -35,11 +35,17 @@ export function PlaceholderEditor({
   onSelect,
 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
   const dragState = useRef<{ id: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
   const [wrapWidth, setWrapWidth] = useState(0);
+  // The page's TRUE aspect ratio (height/width) taken from the loaded raster's
+  // natural pixel size. Relying on the passed pageWidth/pageHeight was wrong
+  // when they didn't match the actual back-page raster, so positions mapped to
+  // the wrong place. The raster never lies about its own shape.
+  const [imgAspect, setImgAspect] = useState<number | null>(null);
 
   // Measure the stable wrapper width (never changes when the inner stage
-  // resizes), then derive a single uniform scale from the known page size.
+  // resizes).
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
@@ -50,7 +56,31 @@ export function PlaceholderEditor({
     return () => ro.disconnect();
   }, []);
 
+  // Capture the raster's natural aspect ratio once it loads (and reset when the
+  // backdrop image changes, e.g. switching Front/Back).
+  useEffect(() => {
+    setImgAspect(null);
+  }, [pageImageUrl]);
+
+  const onImgLoad = () => {
+    const im = imgRef.current;
+    if (im && im.naturalWidth > 0) {
+      setImgAspect(im.naturalHeight / im.naturalWidth);
+    }
+  };
+
+  // Horizontal scale: px per point from the measured width. Vertical uses the
+  // SAME scale (uniform), and we size the stage height from the raster's real
+  // aspect ratio so on-screen pixels map 1:1 to the printed page on both axes.
   const scale = wrapWidth > 0 ? wrapWidth / pageWidth : 1;
+  const stageWidth = wrapWidth > 0 ? pageWidth * scale : 0;
+  // Prefer the raster's true aspect; fall back to the passed page size.
+  const stageHeight =
+    stageWidth > 0
+      ? imgAspect != null
+        ? stageWidth * imgAspect
+        : pageHeight * scale
+      : 0;
 
   const onPointerDown = (e: React.PointerEvent, ph: Placeholder) => {
     e.preventDefault();
@@ -121,17 +151,19 @@ export function PlaceholderEditor({
         <div
           className="relative mx-auto select-none rounded-lg border border-gray-300 bg-gray-50 shadow-sm"
           style={{
-            width: wrapWidth > 0 ? pageWidth * scale : "100%",
-            height: wrapWidth > 0 ? pageHeight * scale : undefined,
-            aspectRatio: wrapWidth > 0 ? undefined : `${pageWidth} / ${pageHeight}`,
+            width: stageWidth > 0 ? stageWidth : "100%",
+            height: stageHeight > 0 ? stageHeight : undefined,
+            aspectRatio: stageWidth > 0 ? undefined : `${pageWidth} / ${pageHeight}`,
           }}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
+            ref={imgRef}
             src={pageImageUrl}
             alt="Template page"
+            onLoad={onImgLoad}
             className="pointer-events-none absolute inset-0 h-full w-full rounded-lg object-fill"
             draggable={false}
           />

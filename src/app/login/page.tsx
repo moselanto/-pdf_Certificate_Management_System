@@ -7,6 +7,7 @@
 // to use the app — see docs/SETUP.md step 5. Sign-up here creates the auth
 // user; link the profile via SQL (or a future invite flow).
 
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -59,9 +60,15 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
       <div className="w-full max-w-sm rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
-        <div className="mb-6 flex items-center gap-2">
-          <div className="h-8 w-8 rounded-lg bg-brand-600" />
-          <span className="text-lg font-bold text-gray-900">CertForge</span>
+        <div className="mb-6 flex justify-center">
+          <Image
+            src="/logo.svg"
+            alt="CertForge"
+            width={200}
+            height={60}
+            priority
+            className="h-10 w-auto"
+          />
         </div>
 
         <h1 className="text-xl font-bold text-gray-900">

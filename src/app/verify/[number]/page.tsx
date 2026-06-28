@@ -2,6 +2,7 @@
 // Server component: fetches from the public verify API and renders a clear
 // "valid / not found / revoked" result. No login required.
 
+import Image from "next/image";
 import { headers } from "next/headers";
 
 interface VerifyResult {
@@ -46,7 +47,14 @@ export default async function VerifyPage({
     <main className="mx-auto flex min-h-screen max-w-lg flex-col items-center justify-center p-6">
       <div className="w-full rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
         <div className="mb-6 flex items-center gap-3">
-          <div className="h-10 w-10 rounded-lg bg-brand-600" />
+          <Image
+            src="/icon.svg"
+            alt="CertForge"
+            width={40}
+            height={40}
+            priority
+            className="h-10 w-10 rounded-lg"
+          />
           <span className="text-lg font-bold text-gray-900">CertForge Verify</span>
         </div>
 

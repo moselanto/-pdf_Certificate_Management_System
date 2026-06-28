@@ -1,18 +1,22 @@
 // POST /api/templates/ai-suggest
-// AI helper for designing certificate templates. Takes a free-text brief and/or
-// guided answers (purpose, audience, tone, orientation, include-back-page) and
-// returns 2-3 sample template "briefs": a name, a short design description, a
-// suggested colour palette, and the recommended fields/placeholders to add in
-// the designer.
+// AI helper for designing certificate templates. Generates SEVERAL visually
+// DISTINCT certificate background images (via the image-generation service) so
+// the user can pick one and create a real template with no manual upload.
 //
-// Uses OpenAI when OPENAI_API_KEY is set; otherwise returns a solid rule-based
-// fallback so the feature always works (no hard dependency on a paid key).
+// Returns: { suggestions: [{ id, name, description, palette, fields, backPage,
+//            imageUrl, imageContentUri }], source }
+//
+// Each suggestion's imageContentUri points at the saved background in the
+// Content Library; the "Use this template" flow (POST /api/templates/from-ai)
+// wraps that image into a front-page PDF and registers the template.
 
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { generateCertificateBackgrounds } from "@/lib/services/aiCertificateImages";
 import { z } from "zod";
 
 export const runtime = "nodejs";
+export const maxDuration = 120; // image generation can take a while
 
 async function currentContext(db: ReturnType<typeof createSupabaseServerClient>) {
   const { data: auth } = await db.auth.getUser();
@@ -33,137 +37,62 @@ const bodySchema = z.object({
   tone: z.string().optional(),
   orientation: z.enum(["landscape", "portrait"]).optional(),
   includeBack: z.boolean().optional(),
+  count: z.number().min(1).max(4).optional(),
+  // A nonce lets "Generate more" force a fresh, different set.
+  variation: z.number().optional(),
 });
 
-interface TemplateSuggestion {
-  name: string;
-  description: string;
-  palette: string[];
-  fields: string[];
-  backPage?: string;
-}
-
-const SYSTEM_PROMPT = `You are a certificate design assistant for "CertForge", a PDF certificate generator.
-The app overlays fields on an uploaded PDF design. Suggested fields map to placeholder kinds the user adds in the designer: recipient name, course/title, issue date, certificate number, trainer signature, institution/issuer, and a verification QR code.
-Given the user's brief, return 2-3 distinct certificate template ideas.
-Respond ONLY with strict JSON of the shape:
-{"suggestions":[{"name":string,"description":string,"palette":[hex,...],"fields":[string,...],"backPage":string}]}
-Keep names short, descriptions 1-2 sentences, palette 2-4 hex colours, fields a concise list, and backPage a short note on what the back page should contain (e.g. course units list) or omit it if not needed.`;
-
-function ruleBasedFallback(input: z.infer<typeof bodySchema>): TemplateSuggestion[] {
-  const purpose = input.purpose || input.brief || "course completion";
-  const tone = (input.tone || "professional").toLowerCase();
-  const includeBack = input.includeBack ?? /course|module|unit|training/i.test(purpose);
-
-  const baseFields = [
-    "Recipient name",
-    "Course / programme title",
-    "Issue date",
-    "Certificate number",
-    "Trainer signature",
-    "Issuing institution",
-    "Verification QR code",
-  ];
-  const backNote = includeBack
-    ? "List the course units / modules covered, drawn dynamically from the selected course."
-    : undefined;
-
-  const formal = {
-    name: `${titleCase(purpose)} — Classic`,
-    description: `A formal, ${tone} certificate with a centered title, a gold/navy border feel, and clear space for the recipient name.`,
-    palette: ["#0B3D67", "#C9A227", "#1F2937"],
-    fields: baseFields,
-    backPage: backNote,
-  };
-  const modern = {
-    name: `${titleCase(purpose)} — Modern`,
-    description: "A clean, minimal layout with a single accent colour, generous whitespace, and a QR code in the lower corner.",
-    palette: ["#2563EB", "#111827"],
-    fields: baseFields,
-    backPage: backNote,
-  };
-  const elegant = {
-    name: `${titleCase(purpose)} — Elegant`,
-    description: "A refined design with a serif title, subtle emblem space at top-center, and signature line(s) at the bottom.",
-    palette: ["#6D28D9", "#0F766E", "#1F2937"],
-    fields: baseFields,
-    backPage: backNote,
-  };
-
-  return [formal, modern, elegant];
-}
-
-function titleCase(s: string): string {
-  return s.replace(/\b\w/g, (c) => c.toUpperCase()).slice(0, 40);
-}
-
-async function openAiSuggest(
-  input: z.infer<typeof bodySchema>,
-): Promise<TemplateSuggestion[] | null> {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) return null;
-
-  const userMsg = [
-    input.brief ? `Brief: ${input.brief}` : "",
-    input.purpose ? `Purpose: ${input.purpose}` : "",
-    input.audience ? `Audience: ${input.audience}` : "",
-    input.tone ? `Tone: ${input.tone}` : "",
-    input.orientation ? `Orientation: ${input.orientation}` : "",
-    input.includeBack !== undefined ? `Include back page: ${input.includeBack}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-
-  try {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${key}`,
-      },
-      body: JSON.stringify({
-        model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-        temperature: 0.7,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userMsg || "Suggest general-purpose certificate templates." },
-        ],
-      }),
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
-    const content = json?.choices?.[0]?.message?.content;
-    if (!content) return null;
-    const parsed = JSON.parse(content);
-    const suggestions = parsed?.suggestions;
-    if (!Array.isArray(suggestions) || suggestions.length === 0) return null;
-    // Light shape validation.
-    return suggestions.slice(0, 3).map((s: Record<string, unknown>) => ({
-      name: String(s.name ?? "Certificate"),
-      description: String(s.description ?? ""),
-      palette: Array.isArray(s.palette) ? (s.palette as string[]).slice(0, 4) : [],
-      fields: Array.isArray(s.fields) ? (s.fields as string[]) : [],
-      backPage: s.backPage ? String(s.backPage) : undefined,
-    }));
-  } catch {
-    return null;
-  }
-}
+const STANDARD_FIELDS = [
+  "Recipient name",
+  "Course / programme title",
+  "Issue date",
+  "Certificate number",
+  "Trainer signature",
+  "Issuing institution",
+  "Verification QR code",
+];
 
 export async function POST(req: NextRequest) {
   const db = createSupabaseServerClient();
   const ctx = await currentContext(db);
   if (!ctx) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (ctx.role === "viewer") {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
 
   try {
     const input = bodySchema.parse(await req.json());
-    const ai = await openAiSuggest(input);
-    const suggestions = ai ?? ruleBasedFallback(input);
-    return NextResponse.json({
-      suggestions,
-      source: ai ? "ai" : "builtin",
+    const count = input.count ?? 3;
+    const includeBack =
+      input.includeBack ??
+      /course|module|unit|training/i.test(input.purpose || input.brief || "");
+
+    const designs = await generateCertificateBackgrounds({
+      orgId: ctx.orgId,
+      brief: input.brief,
+      purpose: input.purpose,
+      audience: input.audience,
+      tone: input.tone,
+      orientation: input.orientation ?? "landscape",
+      count,
+      variation: input.variation ?? 0,
     });
+
+    const suggestions = designs.map((d) => ({
+      id: d.id,
+      name: d.name,
+      description: d.description,
+      palette: d.palette,
+      fields: STANDARD_FIELDS,
+      backPage: includeBack
+        ? "Course units / modules covered, drawn dynamically from the selected course."
+        : undefined,
+      imageUrl: d.imageUrl,
+      imageContentUri: d.imageContentUri,
+      orientation: input.orientation ?? "landscape",
+    }));
+
+    return NextResponse.json({ suggestions, source: "ai" });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 400 });
   }

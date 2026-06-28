@@ -42,7 +42,7 @@ export default async function TemplatesPage({
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Certificate Templates</h2>
           <p className="text-sm text-gray-500">
-            Upload a front (and optional back) PDF once, then position your fields.
+            Generate a design with AI, or upload your own front (and optional back) PDF, then position your fields.
           </p>
         </div>
         <Link
@@ -85,7 +85,7 @@ export default async function TemplatesPage({
           <p className="text-sm text-gray-500">
             {showArchived
               ? "No archived templates."
-              : "No templates yet. Upload your first certificate design to get started."}
+              : "No templates yet. Generate one with AI above, or upload your own design to get started."}
           </p>
           {!showArchived && (
             <Link

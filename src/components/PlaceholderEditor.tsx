@@ -42,10 +42,28 @@ export function PlaceholderEditor({
 }: Props) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const dragState = useRef<{ id: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
-  const [renderWidth, setRenderWidth] = useState(0);
+  const [box, setBox] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
 
-  // Scale factor: rendered pixels per PDF point.
-  const scale = renderWidth > 0 ? renderWidth / pageWidth : 1;
+  // Measure the actual rendered canvas box (width AND height) and observe
+  // resizes. We force the canvas to the page aspect ratio (see style below), so
+  // a single uniform scale maps PDF points -> pixels for BOTH axes. Using only
+  // width previously let a tiny height mismatch push chips down the page.
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const measure = () =>
+      setBox({ width: el.clientWidth, height: el.clientHeight });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Uniform scale: prefer the width-derived scale, but never exceed what the
+  // measured height allows, so points map identically on x and y.
+  const scaleX = box.width > 0 ? box.width / pageWidth : 0;
+  const scaleY = box.height > 0 ? box.height / pageHeight : 0;
+  const scale = scaleX > 0 && scaleY > 0 ? Math.min(scaleX, scaleY) : scaleX || scaleY || 1;
 
   const onPointerDown = (e: React.PointerEvent, ph: Placeholder) => {
     e.preventDefault();
@@ -105,12 +123,16 @@ export function PlaceholderEditor({
   return (
     <div className="w-full">
       <div
-        ref={(el) => {
-          canvasRef.current = el;
-          if (el) setRenderWidth(el.clientWidth);
+        ref={canvasRef}
+        className="relative mx-auto select-none rounded-lg border border-gray-300 bg-gray-50 shadow-sm"
+        style={{
+          // The stage is sized to the EXACT scaled page so the image fills it
+          // edge-to-edge (no letterboxing) and chip coordinates (ph.x*scale,
+          // ph.y*scale) line up 1:1 with the printed PDF on both axes.
+          width: scale > 0 ? pageWidth * scale : "100%",
+          height: scale > 0 ? pageHeight * scale : undefined,
+          aspectRatio: scale > 0 ? undefined : `${pageWidth} / ${pageHeight}`,
         }}
-        className="relative w-full select-none rounded-lg border border-gray-300 bg-gray-50 shadow-sm"
-        style={{ aspectRatio: `${pageWidth} / ${pageHeight}` }}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
       >
@@ -118,7 +140,7 @@ export function PlaceholderEditor({
         <img
           src={pageImageUrl}
           alt="Template page"
-          className="pointer-events-none absolute inset-0 h-full w-full rounded-lg object-contain"
+          className="pointer-events-none absolute inset-0 h-full w-full rounded-lg object-fill"
           draggable={false}
         />
 

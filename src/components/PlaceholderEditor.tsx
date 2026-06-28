@@ -40,30 +40,29 @@ export function PlaceholderEditor({
   selectedId,
   onSelect,
 }: Props) {
+  const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const dragState = useRef<{ id: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
-  const [box, setBox] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+  const [wrapWidth, setWrapWidth] = useState(0);
 
-  // Measure the actual rendered canvas box (width AND height) and observe
-  // resizes. We force the canvas to the page aspect ratio (see style below), so
-  // a single uniform scale maps PDF points -> pixels for BOTH axes. Using only
-  // width previously let a tiny height mismatch push chips down the page.
+  // Measure the WRAPPER's available width (not the inner stage's own size).
+  // The wrapper is a normal full-width block whose width does NOT change when
+  // we resize the inner stage, so observing it can't create a resize feedback
+  // loop (which previously made the canvas shrink endlessly). We derive a
+  // single uniform scale from this width and the known page aspect ratio.
   useEffect(() => {
-    const el = canvasRef.current;
+    const el = wrapRef.current;
     if (!el) return;
-    const measure = () =>
-      setBox({ width: el.clientWidth, height: el.clientHeight });
+    const measure = () => setWrapWidth(el.clientWidth);
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
 
-  // Uniform scale: prefer the width-derived scale, but never exceed what the
-  // measured height allows, so points map identically on x and y.
-  const scaleX = box.width > 0 ? box.width / pageWidth : 0;
-  const scaleY = box.height > 0 ? box.height / pageHeight : 0;
-  const scale = scaleX > 0 && scaleY > 0 ? Math.min(scaleX, scaleY) : scaleX || scaleY || 1;
+  // Uniform scale: pixels per PDF point. Width-derived; height follows the page
+  // aspect ratio, so x and y map identically.
+  const scale = wrapWidth > 0 ? wrapWidth / pageWidth : 1;
 
   const onPointerDown = (e: React.PointerEvent, ph: Placeholder) => {
     e.preventDefault();
@@ -122,6 +121,10 @@ export function PlaceholderEditor({
 
   return (
     <div className="w-full">
+      {/* Stable, full-width wrapper we measure. Its width does NOT change when
+          the inner stage resizes, so the ResizeObserver can't feed back into a
+          shrink loop. */}
+      <div ref={wrapRef} className="w-full">
       <div
         ref={canvasRef}
         className="relative mx-auto select-none rounded-lg border border-gray-300 bg-gray-50 shadow-sm"
@@ -129,9 +132,9 @@ export function PlaceholderEditor({
           // The stage is sized to the EXACT scaled page so the image fills it
           // edge-to-edge (no letterboxing) and chip coordinates (ph.x*scale,
           // ph.y*scale) line up 1:1 with the printed PDF on both axes.
-          width: scale > 0 ? pageWidth * scale : "100%",
-          height: scale > 0 ? pageHeight * scale : undefined,
-          aspectRatio: scale > 0 ? undefined : `${pageWidth} / ${pageHeight}`,
+          width: wrapWidth > 0 ? pageWidth * scale : "100%",
+          height: wrapWidth > 0 ? pageHeight * scale : undefined,
+          aspectRatio: wrapWidth > 0 ? undefined : `${pageWidth} / ${pageHeight}`,
         }}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -187,6 +190,8 @@ export function PlaceholderEditor({
             </div>
           );
         })}
+      </div>
+
       </div>
 
       <p className="mt-2 text-xs text-gray-500">

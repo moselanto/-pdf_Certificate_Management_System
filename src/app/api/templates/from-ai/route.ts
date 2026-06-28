@@ -20,7 +20,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { PDFDocument } from "pdf-lib";
 import { createSupabaseServerClient, createSupabaseServiceClient } from "@/lib/supabase/server";
 import { downloadBytes, TEMPLATE_BUCKET } from "@/lib/supabase/storage";
-import { buildBackgroundPdf, presetById } from "@/lib/pdf/certBackground";
+import { buildBackgroundPdf, presetById, textColorsFor } from "@/lib/pdf/certBackground";
 import type { Placeholder } from "@/lib/domain/types";
 import { z } from "zod";
 
@@ -90,9 +90,14 @@ function defaultPlaceholders(
   pageW: number,
   pageH: number,
   includeBack: boolean,
+  styleId: string | undefined,
 ): Placeholder[] {
   const cx = Math.round(pageW / 2);
   const id = (k: string) => `ai-${k}`;
+  // Colors derived from the chosen background style so text always reads well
+  // against it (headings borrow the style's primary; body/secondary use a
+  // calibrated dark gray). Falls back to the first preset when styleId is unset.
+  const colors = textColorsFor(styleId ?? "");
   const phs: Placeholder[] = [
     {
       id: id("recipient"),
@@ -104,7 +109,7 @@ function defaultPlaceholders(
       y: Math.round(pageH * 0.42),
       fontSize: 34,
       fontFamily: "Times-Bold",
-      color: "#1A1A1A",
+      color: colors.heading,
       align: "center",
     },
     {
@@ -117,7 +122,7 @@ function defaultPlaceholders(
       y: Math.round(pageH * 0.56),
       fontSize: 20,
       fontFamily: "Helvetica",
-      color: "#333333",
+      color: colors.body,
       align: "center",
     },
     {
@@ -130,7 +135,7 @@ function defaultPlaceholders(
       y: Math.round(pageH * 0.82),
       fontSize: 13,
       fontFamily: "Helvetica",
-      color: "#444444",
+      color: colors.muted,
       align: "center",
     },
     {
@@ -145,7 +150,7 @@ function defaultPlaceholders(
       height: 48,
       fontSize: 18,
       fontFamily: "Helvetica-Oblique",
-      color: "#222222",
+      color: colors.body,
       align: "center",
     },
     {
@@ -158,7 +163,7 @@ function defaultPlaceholders(
       y: Math.round(pageH * 0.9),
       fontSize: 12,
       fontFamily: "Helvetica",
-      color: "#666666",
+      color: colors.muted,
       align: "center",
     },
     {
@@ -171,14 +176,18 @@ function defaultPlaceholders(
       y: Math.round(pageH * 0.94),
       fontSize: 9,
       fontFamily: "Courier",
-      color: "#888888",
+      color: colors.muted,
       align: "left",
     },
     {
+      // NOTE: fieldKey MUST be "qr_code" — the render engine
+      // (generateCertificate) injects the verification QR into the image map
+      // keyed "qr_code". The previous "verify_qr" key never matched, so the QR
+      // box rendered empty on AI-generated templates.
       id: id("qr"),
       page: "front",
       kind: "qr",
-      fieldKey: "verify_qr",
+      fieldKey: "qr_code",
       label: "Verification QR code",
       x: Math.round(pageW * 0.88),
       y: Math.round(pageH * 0.88),
@@ -188,6 +197,8 @@ function defaultPlaceholders(
       fontFamily: "Helvetica",
       color: "#000000",
       align: "left",
+      qrDark: colors.qrDark,
+      qrTransparent: colors.qrTransparent,
     },
   ];
 
@@ -276,8 +287,8 @@ export async function POST(req: NextRequest) {
       .single();
     if (insErr || !tpl) throw new Error(`create failed: ${insErr?.message}`);
 
-    // Auto-place the standard placeholders.
-    const placeholders = defaultPlaceholders(pageW, pageH, !!input.includeBack);
+    // Auto-place the standard placeholders (colors derived from the style).
+    const placeholders = defaultPlaceholders(pageW, pageH, !!input.includeBack, input.styleId);
     // NOTE: the placeholders table has NO org_id column — rows are scoped via
     // their parent template_id (RLS enforces the org). Column names mirror the
     // designer's PUT /api/templates/[id]/placeholders insert exactly.

@@ -61,10 +61,61 @@ export const STYLE_PRESETS: StylePreset[] = [
     description: "Traditional burgundy and gold border with scrollwork corners and a circular seal.",
     palette: ["#7F1D1D", "#C9A227", "#FFFBF5"],
   },
+  {
+    id: "teal-coral",
+    name: "Fresh Teal & Coral",
+    description: "Bright, friendly teal frame with a warm coral accent rule and a rounded geometric mark — good for workshops and short courses.",
+    palette: ["#0D9488", "#FB7185", "#FFFFFF"],
+  },
+  {
+    id: "charcoal-amber",
+    name: "Charcoal & Amber",
+    description: "Dark charcoal frame with a single amber accent stripe and a minimal seal — high-contrast and modern for technical or IT programmes.",
+    palette: ["#1F2937", "#F59E0B", "#FBFBFB"],
+  },
+  {
+    id: "forest-cream",
+    name: "Forest & Cream",
+    description: "Calm forest-green double frame on warm cream with leaf-like corner flourishes and a laurel seal — natural and academic.",
+    palette: ["#166534", "#A3863B", "#FCFBF4"],
+  },
 ];
 
 export function presetById(id: string): StylePreset {
   return STYLE_PRESETS.find((p) => p.id === id) ?? STYLE_PRESETS[0];
+}
+
+/**
+ * Suggested foreground text colors for a given style, derived from its palette.
+ * Used by AI auto-placement so the recipient/course/etc. text always reads well
+ * against the generated background (e.g. a near-black on light paper, with the
+ * style's primary used for headings and a muted gray for secondary lines).
+ *
+ * All styles in STYLE_PRESETS use a LIGHT paper, so dark text is correct; this
+ * helper keeps the color choices in one place should a dark-paper style be
+ * added later (then it would return light text + a transparent/white QR).
+ */
+export interface StyleTextColors {
+  heading: string; // recipient name / primary heading
+  body: string; // course title / main body text
+  muted: string; // secondary lines (date, institution, cert number)
+  /** QR module color + whether the QR background should be transparent. */
+  qrDark: string;
+  qrTransparent: boolean;
+}
+
+export function textColorsFor(styleId: string): StyleTextColors {
+  const preset = presetById(styleId);
+  const [primary] = preset.palette;
+  // Every current preset has a light paper, so dark, high-contrast text reads
+  // best. Headings borrow the style's primary color for a cohesive look.
+  return {
+    heading: primary,
+    body: "#333333",
+    muted: "#666666",
+    qrDark: "#000000",
+    qrTransparent: false,
+  };
 }
 
 function hexToRgb(hex: string): RGB {

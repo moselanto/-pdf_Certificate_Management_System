@@ -3,26 +3,20 @@
 // ============================================================================
 // PlaceholderEditor — drag-and-drop positioning of fields over a template page.
 //
-// The template page is rendered as a background image (a PNG raster of the
-// uploaded PDF). Each placeholder is an absolutely-positioned, draggable chip.
-// Coordinates are kept in PDF points with a TOP-LEFT origin.
-//
-// ALIGNMENT (must match the pdf-lib engine in src/lib/pdf/overlay.ts):
-//   - align "left":   ph.x is the LEFT edge of the text
-//   - align "center": ph.x is the CENTER of the text
-//   - align "right":  ph.x is the RIGHT edge of the text
-// We anchor each chip at ph.x and use a CSS translateX to shift it so the chip
-// previews text the same way the generated PDF draws it. This keeps "what you
-// see" equal to "what you print".
+// The page raster is shown as a background image. Each placeholder is an
+// absolutely-positioned, draggable chip. Coordinates are PDF points, TOP-LEFT
+// origin — identical to the pdf-lib engine, which converts to bottom-left at
+// render time. The inner stage is sized to EXACTLY pageWidth*scale x
+// pageHeight*scale (object-fill image) so on-screen pixels map 1:1 to the
+// printed PDF on BOTH axes. A live X/Y readout + "Center on page" button make
+// placement exact and verifiable.
 // ============================================================================
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Placeholder } from "@/lib/domain/types";
 
 interface Props {
-  /** Background raster of the template page (data URL or storage URL). */
   pageImageUrl: string;
-  /** True page size in PDF points (from readTemplatePageSize). */
   pageWidth: number;
   pageHeight: number;
   placeholders: Placeholder[];
@@ -41,15 +35,11 @@ export function PlaceholderEditor({
   onSelect,
 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLDivElement>(null);
   const dragState = useRef<{ id: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
   const [wrapWidth, setWrapWidth] = useState(0);
 
-  // Measure the WRAPPER's available width (not the inner stage's own size).
-  // The wrapper is a normal full-width block whose width does NOT change when
-  // we resize the inner stage, so observing it can't create a resize feedback
-  // loop (which previously made the canvas shrink endlessly). We derive a
-  // single uniform scale from this width and the known page aspect ratio.
+  // Measure the stable wrapper width (never changes when the inner stage
+  // resizes), then derive a single uniform scale from the known page size.
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
@@ -60,16 +50,11 @@ export function PlaceholderEditor({
     return () => ro.disconnect();
   }, []);
 
-  // Uniform scale: pixels per PDF point. Width-derived; height follows the page
-  // aspect ratio, so x and y map identically.
   const scale = wrapWidth > 0 ? wrapWidth / pageWidth : 1;
 
   const onPointerDown = (e: React.PointerEvent, ph: Placeholder) => {
     e.preventDefault();
     onSelect?.(ph.id);
-    // Track the pointer's start position and the field's original point coords,
-    // so dragging moves the anchor (ph.x) by the same delta regardless of which
-    // part of the chip you grabbed. This avoids alignment-dependent jumps.
     dragState.current = {
       id: ph.id,
       startX: e.clientX,
@@ -84,13 +69,10 @@ export function PlaceholderEditor({
     (e: React.PointerEvent) => {
       const ds = dragState.current;
       if (!ds || scale === 0) return;
-
-      // Convert the pixel delta to a point delta and apply to the anchor.
       const dxPts = (e.clientX - ds.startX) / scale;
       const dyPts = (e.clientY - ds.startY) / scale;
       const xPts = Math.max(0, Math.min(pageWidth, ds.origX + dxPts));
       const yPts = Math.max(0, Math.min(pageHeight, ds.origY + dyPts));
-
       onChange(
         placeholders.map((p) =>
           p.id === ds.id ? { ...p, x: Math.round(xPts), y: Math.round(yPts) } : p,
@@ -104,101 +86,123 @@ export function PlaceholderEditor({
     dragState.current = null;
   };
 
-  // CSS transform that mirrors the engine's alignment anchoring.
+  // Center the selected field on the page. For the course list (top-left
+  // anchored block) we offset upward by a rough block height so the BLOCK looks
+  // centered, not its first line.
+  const centerSelected = () => {
+    if (!selectedId) return;
+    onChange(
+      placeholders.map((p) => {
+        if (p.id !== selectedId) return p;
+        if (p.kind === "course_list") {
+          // Put the list's top a bit above the vertical middle.
+          return { ...p, x: Math.round(pageWidth / 2), y: Math.round(pageHeight * 0.32), align: "center" };
+        }
+        return { ...p, x: Math.round(pageWidth / 2), y: Math.round(pageHeight / 2) };
+      }),
+    );
+  };
+
   const anchorTransform = (ph: Placeholder) => {
     if (ph.kind === "qr" || ph.kind === "image" || ph.kind === "signature") {
-      return "translate(0, 0)"; // images anchor at top-left like the engine
+      return "translate(0, 0)";
     }
-    // The course list is drawn from the TOP-LEFT of ph.(x,y) in the engine
-    // (the first line's top sits at ph.y). So anchor its chip top-left too,
-    // regardless of text align — its align only affects horizontal layout of
-    // each line within the block, which we don't simulate in the chip.
     if (ph.kind === "course_list") return "translate(0, 0)";
     if (ph.align === "center") return "translate(-50%, 0)";
     if (ph.align === "right") return "translate(-100%, 0)";
-    return "translate(0, 0)"; // left
+    return "translate(0, 0)";
   };
+
+  const selected = placeholders.find((p) => p.id === selectedId);
 
   return (
     <div className="w-full">
-      {/* Stable, full-width wrapper we measure. Its width does NOT change when
-          the inner stage resizes, so the ResizeObserver can't feed back into a
-          shrink loop. */}
       <div ref={wrapRef} className="w-full">
-      <div
-        ref={canvasRef}
-        className="relative mx-auto select-none rounded-lg border border-gray-300 bg-gray-50 shadow-sm"
-        style={{
-          // The stage is sized to the EXACT scaled page so the image fills it
-          // edge-to-edge (no letterboxing) and chip coordinates (ph.x*scale,
-          // ph.y*scale) line up 1:1 with the printed PDF on both axes.
-          width: wrapWidth > 0 ? pageWidth * scale : "100%",
-          height: wrapWidth > 0 ? pageHeight * scale : undefined,
-          aspectRatio: wrapWidth > 0 ? undefined : `${pageWidth} / ${pageHeight}`,
-        }}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={pageImageUrl}
-          alt="Template page"
-          className="pointer-events-none absolute inset-0 h-full w-full rounded-lg object-fill"
-          draggable={false}
-        />
+        <div
+          className="relative mx-auto select-none rounded-lg border border-gray-300 bg-gray-50 shadow-sm"
+          style={{
+            width: wrapWidth > 0 ? pageWidth * scale : "100%",
+            height: wrapWidth > 0 ? pageHeight * scale : undefined,
+            aspectRatio: wrapWidth > 0 ? undefined : `${pageWidth} / ${pageHeight}`,
+          }}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={pageImageUrl}
+            alt="Template page"
+            className="pointer-events-none absolute inset-0 h-full w-full rounded-lg object-fill"
+            draggable={false}
+          />
 
-        {placeholders.map((ph) => {
-          const isSelected = ph.id === selectedId;
-          const isImage = ph.kind === "qr" || ph.kind === "image" || ph.kind === "signature";
-          return (
-            <div
-              key={ph.id}
-              onPointerDown={(e) => onPointerDown(e, ph)}
-              className={[
-                "absolute cursor-move whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-medium shadow",
-                isSelected
-                  ? "bg-brand-600 text-white ring-2 ring-brand-700"
-                  : "bg-white/90 text-gray-800 ring-1 ring-gray-300",
-              ].join(" ")}
-              style={{
-                left: ph.x * scale,
-                top: ph.y * scale,
-                transform: anchorTransform(ph),
-                transformOrigin: "top left",
-                // Preview images at their real box size; text at its font size.
-                // For the course-list box we strip chip padding and show it at
-                // the real font size so its top-left exactly matches where the
-                // engine starts drawing (no drift between drag and print).
-                fontSize: isImage ? undefined : Math.max(9, ph.fontSize * scale),
-                width: isImage && ph.width ? ph.width * scale : undefined,
-                height: isImage && ph.height ? ph.height * scale : undefined,
-                padding: ph.kind === "course_list" ? 0 : undefined,
-                boxShadow: ph.kind === "course_list" ? "none" : undefined,
-                lineHeight: ph.kind === "course_list" ? 1 : undefined,
-              }}
-              title={`${ph.label} (${ph.kind}) — align: ${ph.align}`}
-            >
-              {ph.kind === "qr"
-                ? "QR"
-                : ph.kind === "signature"
-                ? "Signature"
-                : ph.kind === "image"
-                ? "Image"
-                : ph.kind === "course_list"
-                ? "Course list ▤"
-                : ph.label}
-            </div>
-          );
-        })}
+          {/* Center guide lines (faint) to help judge placement. */}
+          <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px bg-brand-300/40" />
+          <div className="pointer-events-none absolute inset-x-0 top-1/2 h-px bg-brand-300/40" />
+
+          {placeholders.map((ph) => {
+            const isSelected = ph.id === selectedId;
+            const isImage = ph.kind === "qr" || ph.kind === "image" || ph.kind === "signature";
+            return (
+              <div
+                key={ph.id}
+                onPointerDown={(e) => onPointerDown(e, ph)}
+                className={[
+                  "absolute cursor-move whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-medium shadow",
+                  isSelected
+                    ? "bg-brand-600 text-white ring-2 ring-brand-700"
+                    : "bg-white/90 text-gray-800 ring-1 ring-gray-300",
+                ].join(" ")}
+                style={{
+                  left: ph.x * scale,
+                  top: ph.y * scale,
+                  transform: anchorTransform(ph),
+                  transformOrigin: "top left",
+                  fontSize: isImage ? undefined : Math.max(9, ph.fontSize * scale),
+                  width: isImage && ph.width ? ph.width * scale : undefined,
+                  height: isImage && ph.height ? ph.height * scale : undefined,
+                  padding: ph.kind === "course_list" ? 0 : undefined,
+                  boxShadow: ph.kind === "course_list" ? "none" : undefined,
+                  lineHeight: ph.kind === "course_list" ? 1 : undefined,
+                }}
+                title={`${ph.label} (${ph.kind}) — x:${ph.x} y:${ph.y}`}
+              >
+                {ph.kind === "qr"
+                  ? "QR"
+                  : ph.kind === "signature"
+                  ? "Signature"
+                  : ph.kind === "image"
+                  ? "Image"
+                  : ph.kind === "course_list"
+                  ? "Course list ▤"
+                  : ph.label}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
+      <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-gray-500">
+        <span>
+          Page: {pageWidth.toFixed(0)} × {pageHeight.toFixed(0)} pt
+        </span>
+        {selected && (
+          <span className="font-mono text-gray-700">
+            {selected.label}: x {selected.x}, y {selected.y}
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={centerSelected}
+          disabled={!selectedId}
+          className="rounded-lg border border-gray-300 px-2.5 py-1 font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+        >
+          Center selected on page
+        </button>
+        <span className="text-gray-400">
+          Drag to position. The faint cross marks the page center.
+        </span>
       </div>
-
-      <p className="mt-2 text-xs text-gray-500">
-        Drag any field to position it. For centered/right-aligned text, the
-        chip anchors the same way the printed PDF does, so the preview matches
-        the output. Page size: {pageWidth.toFixed(0)} × {pageHeight.toFixed(0)} pt.
-      </p>
     </div>
   );
 }

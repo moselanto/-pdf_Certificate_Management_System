@@ -4,10 +4,16 @@
 // PlaceholderEditor — drag-and-drop positioning of fields over a template page.
 //
 // The template page is rendered as a background image (a PNG raster of the
-// uploaded PDF, produced server-side or via pdf.js). Each placeholder is an
-// absolutely-positioned, draggable chip. Coordinates are kept in PDF points
-// with a TOP-LEFT origin — exactly what the overlay engine expects — so what
-// the admin sees is what the generated PDF gets.
+// uploaded PDF). Each placeholder is an absolutely-positioned, draggable chip.
+// Coordinates are kept in PDF points with a TOP-LEFT origin.
+//
+// ALIGNMENT (must match the pdf-lib engine in src/lib/pdf/overlay.ts):
+//   - align "left":   ph.x is the LEFT edge of the text
+//   - align "center": ph.x is the CENTER of the text
+//   - align "right":  ph.x is the RIGHT edge of the text
+// We anchor each chip at ph.x and use a CSS translateX to shift it so the chip
+// previews text the same way the generated PDF draws it. This keeps "what you
+// see" equal to "what you print".
 // ============================================================================
 
 import { useCallback, useRef, useState } from "react";
@@ -35,7 +41,7 @@ export function PlaceholderEditor({
   onSelect,
 }: Props) {
   const canvasRef = useRef<HTMLDivElement>(null);
-  const dragState = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null);
+  const dragState = useRef<{ id: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
   const [renderWidth, setRenderWidth] = useState(0);
 
   // Scale factor: rendered pixels per PDF point.
@@ -44,11 +50,15 @@ export function PlaceholderEditor({
   const onPointerDown = (e: React.PointerEvent, ph: Placeholder) => {
     e.preventDefault();
     onSelect?.(ph.id);
-    const rect = (e.target as HTMLElement).getBoundingClientRect();
+    // Track the pointer's start position and the field's original point coords,
+    // so dragging moves the anchor (ph.x) by the same delta regardless of which
+    // part of the chip you grabbed. This avoids alignment-dependent jumps.
     dragState.current = {
       id: ph.id,
-      offsetX: e.clientX - rect.left,
-      offsetY: e.clientY - rect.top,
+      startX: e.clientX,
+      startY: e.clientY,
+      origX: ph.x,
+      origY: ph.y,
     };
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
   };
@@ -56,15 +66,13 @@ export function PlaceholderEditor({
   const onPointerMove = useCallback(
     (e: React.PointerEvent) => {
       const ds = dragState.current;
-      const canvas = canvasRef.current;
-      if (!ds || !canvas) return;
-      const bounds = canvas.getBoundingClientRect();
+      if (!ds || scale === 0) return;
 
-      // Pixel position within the canvas, then convert to PDF points.
-      const px = e.clientX - bounds.left - ds.offsetX;
-      const py = e.clientY - bounds.top - ds.offsetY;
-      const xPts = Math.max(0, Math.min(pageWidth, px / scale));
-      const yPts = Math.max(0, Math.min(pageHeight, py / scale));
+      // Convert the pixel delta to a point delta and apply to the anchor.
+      const dxPts = (e.clientX - ds.startX) / scale;
+      const dyPts = (e.clientY - ds.startY) / scale;
+      const xPts = Math.max(0, Math.min(pageWidth, ds.origX + dxPts));
+      const yPts = Math.max(0, Math.min(pageHeight, ds.origY + dyPts));
 
       onChange(
         placeholders.map((p) =>
@@ -77,6 +85,16 @@ export function PlaceholderEditor({
 
   const onPointerUp = () => {
     dragState.current = null;
+  };
+
+  // CSS transform that mirrors the engine's alignment anchoring.
+  const anchorTransform = (ph: Placeholder) => {
+    if (ph.kind === "qr" || ph.kind === "image" || ph.kind === "signature") {
+      return "translate(0, 0)"; // images anchor at top-left like the engine
+    }
+    if (ph.align === "center") return "translate(-50%, 0)";
+    if (ph.align === "right") return "translate(-100%, 0)";
+    return "translate(0, 0)"; // left
   };
 
   return (
@@ -101,6 +119,7 @@ export function PlaceholderEditor({
 
         {placeholders.map((ph) => {
           const isSelected = ph.id === selectedId;
+          const isImage = ph.kind === "qr" || ph.kind === "image" || ph.kind === "signature";
           return (
             <div
               key={ph.id}
@@ -114,14 +133,21 @@ export function PlaceholderEditor({
               style={{
                 left: ph.x * scale,
                 top: ph.y * scale,
-                fontSize: Math.max(9, ph.fontSize * scale * 0.7),
+                transform: anchorTransform(ph),
+                transformOrigin: "top left",
+                // Preview images at their real box size; text at its font size.
+                fontSize: isImage ? undefined : Math.max(9, ph.fontSize * scale),
+                width: isImage && ph.width ? ph.width * scale : undefined,
+                height: isImage && ph.height ? ph.height * scale : undefined,
               }}
-              title={`${ph.label} (${ph.kind})`}
+              title={`${ph.label} (${ph.kind}) — align: ${ph.align}`}
             >
               {ph.kind === "qr"
                 ? "QR"
                 : ph.kind === "signature"
                 ? "Signature"
+                : ph.kind === "image"
+                ? "Image"
                 : ph.label}
             </div>
           );
@@ -129,9 +155,9 @@ export function PlaceholderEditor({
       </div>
 
       <p className="mt-2 text-xs text-gray-500">
-        Drag any field to position it. Coordinates are saved in PDF points
-        ({pageWidth.toFixed(0)} × {pageHeight.toFixed(0)} pt), so the live
-        preview matches the printed certificate exactly.
+        Drag any field to position it. For centered/right-aligned text, the
+        chip anchors the same way the printed PDF does, so the preview matches
+        the output. Page size: {pageWidth.toFixed(0)} × {pageHeight.toFixed(0)} pt.
       </p>
     </div>
   );

@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 const NAV = [
@@ -16,10 +17,16 @@ const NAV = [
 export function Sidebar() {
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-gray-200 bg-white">
-      <div className="flex items-center gap-2 px-5 py-5">
-        <div className="h-8 w-8 rounded-lg bg-brand-600" />
-        <span className="text-lg font-bold text-gray-900">CertForge</span>
-      </div>
+      <Link href="/dashboard" className="flex items-center px-5 py-5">
+        <Image
+          src="/logo.svg"
+          alt="CertForge"
+          width={180}
+          height={54}
+          priority
+          className="h-9 w-auto"
+        />
+      </Link>
       <nav className="flex-1 space-y-1 px-3 py-2">
         {NAV.map((item) => (
           <Link

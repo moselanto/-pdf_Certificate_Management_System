@@ -113,14 +113,32 @@ export async function generateCertificate(
   const images: Record<string, Uint8Array> = { qr_code: qrBytes };
   if (signatureBytes) images.trainer_signature = signatureBytes;
 
-  // Template logo: if the template has an uploaded logo AND the designer placed
-  // a "logo" image placeholder, draw the logo into that box on every cert.
-  // Keyed "logo" to match the placeholder's fieldKey.
-  if (template.logo_path) {
-    try {
-      images.logo = await downloadTemplate(db, template.logo_path);
-    } catch {
-      /* logo optional — ignore if it can't be fetched */
+  // Logo: if the designer placed a "logo" image placeholder, draw a logo into
+  // that box on every cert. Resolution order:
+  //   1. the template's own logo (templates.logo_path), else
+  //   2. the organization's default logo (organizations.logo_path),
+  // so a single org-level upload can brand every template at once while a
+  // template can still override with its own logo. Keyed "logo" to match the
+  // placeholder's fieldKey. Only fetched when a logo placeholder actually exists.
+  const hasLogoPlaceholder = placeholders.some(
+    (p) => p.fieldKey === "logo" && (p.kind === "image" || p.kind === "signature"),
+  );
+  if (hasLogoPlaceholder) {
+    let logoPath: string | null = template.logo_path ?? null;
+    if (!logoPath) {
+      const { data: org } = await db
+        .from("organizations")
+        .select("logo_path")
+        .eq("id", args.orgId)
+        .single();
+      logoPath = org?.logo_path ?? null;
+    }
+    if (logoPath) {
+      try {
+        images.logo = await downloadTemplate(db, logoPath);
+      } catch {
+        /* logo optional — ignore if it can't be fetched */
+      }
     }
   }
 

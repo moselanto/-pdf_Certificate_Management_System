@@ -102,13 +102,36 @@ async function drawImage(
   bytes: Uint8Array,
   ph: Placeholder,
 ) {
-  // QR & signatures are PNG; embed and place within the placeholder box.
-  const img = await pdf.embedPng(bytes);
-  const w = ph.width ?? 96;
-  const h = ph.height ?? w;
+  // QR & signatures are PNG; logos may be PNG or JPEG. Try PNG first, fall back
+  // to JPEG so an uploaded JPEG logo still renders (embedPng throws on JPEG).
+  let img;
+  try {
+    img = await pdf.embedPng(bytes);
+  } catch {
+    img = await pdf.embedJpg(bytes);
+  }
+
+  const boxW = ph.width ?? 96;
+  const boxH = ph.height ?? boxW;
   const pageHeight = page.getHeight();
-  const y = pageHeight - ph.y - h;
-  page.drawImage(img, { x: ph.x, y, width: w, height: h });
+
+  if (ph.lockAspect) {
+    // "contain" the image inside the box, preserving its intrinsic aspect ratio,
+    // and center it. Avoids stretching a logo/signature that isn't the same
+    // proportion as the placeholder box.
+    const scale = Math.min(boxW / img.width, boxH / img.height);
+    const drawW = img.width * scale;
+    const drawH = img.height * scale;
+    const offsetX = (boxW - drawW) / 2;
+    const offsetY = (boxH - drawH) / 2;
+    const y = pageHeight - ph.y - boxH + offsetY;
+    page.drawImage(img, { x: ph.x + offsetX, y, width: drawW, height: drawH });
+    return;
+  }
+
+  // Default: stretch to fill the box exactly (original behaviour).
+  const y = pageHeight - ph.y - boxH;
+  page.drawImage(img, { x: ph.x, y, width: boxW, height: boxH });
 }
 
 /**

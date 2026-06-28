@@ -36,6 +36,10 @@ export interface Placeholder {
   qrDark?: string; // hex, e.g. "#FFFFFF"
   qrLight?: string; // hex, e.g. "#FFFFFF"
   qrTransparent?: boolean;
+  // image/logo/signature-only: when true, preserve the image's intrinsic aspect
+  // ratio inside the width x height box ("contain"), instead of stretching to
+  // fill it. The image is centered within the box. Defaults false.
+  lockAspect?: boolean;
 }
 
 export interface CourseUnit {

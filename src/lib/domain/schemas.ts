@@ -31,6 +31,8 @@ export const placeholderSchema = z.object({
   qrDark: hexColor.optional(),
   qrLight: hexColor.optional(),
   qrTransparent: z.boolean().optional(),
+  // image/logo/signature: preserve intrinsic aspect ratio inside the box.
+  lockAspect: z.boolean().optional(),
 });
 
 export const generateCertificateSchema = z.object({

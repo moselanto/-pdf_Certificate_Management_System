@@ -1,7 +1,8 @@
 "use client";
 
 // Client wrapper around TemplateDesigner. Responsibilities:
-//   1. Rasterize the template's front PDF into a PNG backdrop (pdf.js).
+//   1. Rasterize the template's front PDF (and back PDF, if present) into PNG
+//      backdrops (pdf.js).
 //   2. Load any saved placeholders for this template.
 //   3. Persist placeholders via PUT /api/templates/[id]/placeholders.
 
@@ -13,6 +14,7 @@ import type { Placeholder } from "@/lib/domain/types";
 interface Props {
   templateId: string;
   frontPdfUrl: string;
+  backPdfUrl?: string;
   pageWidth: number;
   pageHeight: number;
 }
@@ -20,14 +22,16 @@ interface Props {
 export function TemplateDesignerClient({
   templateId,
   frontPdfUrl,
+  backPdfUrl,
   pageWidth,
   pageHeight,
 }: Props) {
   const [pageImageUrl, setPageImageUrl] = useState<string | null>(null);
+  const [backImageUrl, setBackImageUrl] = useState<string | null>(null);
   const [placeholders, setPlaceholders] = useState<Placeholder[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Rasterize the backdrop once.
+  // Rasterize the front backdrop once.
   useEffect(() => {
     let cancelled = false;
     if (!frontPdfUrl) {
@@ -43,6 +47,26 @@ export function TemplateDesignerClient({
       cancelled = true;
     };
   }, [frontPdfUrl]);
+
+  // Rasterize the back backdrop, if a back PDF exists. Best-effort: failure
+  // just leaves the back canvas blank (the toggle still works).
+  useEffect(() => {
+    let cancelled = false;
+    if (!backPdfUrl) {
+      setBackImageUrl(null);
+      return;
+    }
+    rasterizeFirstPage(backPdfUrl)
+      .then((r) => {
+        if (!cancelled) setBackImageUrl(r.dataUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setBackImageUrl(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [backPdfUrl]);
 
   // Load saved placeholders.
   useEffect(() => {
@@ -85,6 +109,8 @@ export function TemplateDesignerClient({
     <TemplateDesigner
       templateId={templateId}
       pageImageUrl={pageImageUrl}
+      backImageUrl={backImageUrl ?? undefined}
+      hasBackPdf={Boolean(backPdfUrl)}
       pageWidth={pageWidth}
       pageHeight={pageHeight}
       initialPlaceholders={placeholders}

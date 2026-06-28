@@ -2,20 +2,20 @@
 
 // ============================================================================
 // TemplateDesigner — orchestrates the full template editing experience:
-//   • Toolbar to add fields (text/date/qr/signature)
-//   • PlaceholderEditor (drag-and-drop on the page raster)
+//   • Front / Back page toggle (shows the matching PDF backdrop)
+//   • Toolbar to add fields (text/date/qr/signature/course-list)
+//   • PlaceholderEditor (drag-and-drop on the active page raster)
 //   • FieldInspector (edit selected field)
 //   • Live preview -> POSTs current layout + a sample name you can edit, then
 //     shows the rendered PDF in an <iframe>.
 //
-// NOTE: Live preview uses a SAMPLE name purely so you can check placement here
-// in the designer. The real recipient name comes from the Generate Certificate
-// screen. The sample name field below lets you type any name to preview with,
-// so the preview reflects what you type rather than a fixed placeholder.
+// The editor shows ONE page at a time. New fields are added to the active page,
+// and only that page's placeholders are shown/dragged — but Save always
+// persists BOTH pages' placeholders together.
 // ============================================================================
 
 import { useMemo, useState } from "react";
-import type { Placeholder, PlaceholderKind } from "@/lib/domain/types";
+import type { Placeholder, PlaceholderKind, PlaceholderPage } from "@/lib/domain/types";
 import { PlaceholderEditor } from "./PlaceholderEditor";
 import { FieldInspector } from "./FieldInspector";
 
@@ -25,6 +25,8 @@ const newId = () => `ph_${Date.now()}_${idCounter++}`;
 interface Props {
   templateId: string;
   pageImageUrl: string;
+  backImageUrl?: string;
+  hasBackPdf?: boolean;
   pageWidth: number;
   pageHeight: number;
   initialPlaceholders?: Placeholder[];
@@ -39,12 +41,14 @@ const FIELD_PRESETS: Array<{ kind: PlaceholderKind; label: string; fieldKey: str
   { kind: "text", label: "Certificate No.", fieldKey: "certificate_number" },
   { kind: "signature", label: "Trainer Signature", fieldKey: "trainer_signature" },
   { kind: "qr", label: "Verification QR", fieldKey: "qr_code" },
-  { kind: "course_list", label: "Course List (back)", fieldKey: "course_units" },
+  { kind: "course_list", label: "Course List", fieldKey: "course_units" },
 ];
 
 export function TemplateDesigner({
   templateId,
   pageImageUrl,
+  backImageUrl,
+  hasBackPdf = false,
   pageWidth,
   pageHeight,
   initialPlaceholders = [],
@@ -52,6 +56,7 @@ export function TemplateDesigner({
 }: Props) {
   const [placeholders, setPlaceholders] = useState<Placeholder[]>(initialPlaceholders);
   const [selectedId, setSelectedId] = useState<string | undefined>();
+  const [activePage, setActivePage] = useState<PlaceholderPage>("front");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewName, setPreviewName] = useState("Jane W. Mwangi");
   const [saving, setSaving] = useState(false);
@@ -62,24 +67,41 @@ export function TemplateDesigner({
     [placeholders, selectedId],
   );
 
+  // Only show the active page's fields on the canvas.
+  const visiblePlaceholders = useMemo(
+    () => placeholders.filter((p) => (p.page ?? "front") === activePage),
+    [placeholders, activePage],
+  );
+
+  // The backdrop for the active page. If there's no back image (no back PDF, or
+  // it failed to rasterize) we show a blank canvas so back fields can still be
+  // positioned by eye.
+  const backdrop =
+    activePage === "back"
+      ? backImageUrl ?? BLANK_PAGE
+      : pageImageUrl;
+
   const addField = (preset: (typeof FIELD_PRESETS)[number]) => {
-    const isImage = preset.kind === "qr" || preset.kind === "signature";
+    const isCourseList = preset.kind === "course_list";
     const ph: Placeholder = {
       id: newId(),
-      page: "front",
+      // New fields land on whichever page you're currently editing. The course
+      // list defaults to the back page (it's a back-page element).
+      page: isCourseList ? "back" : activePage,
       kind: preset.kind,
       fieldKey: preset.fieldKey,
       label: preset.label,
       x: Math.round(pageWidth / 2),
       y: Math.round(pageHeight / 2),
-      // Smaller, sensible defaults: QR 64pt, signature 120x48pt.
       width: preset.kind === "qr" ? 64 : preset.kind === "signature" ? 120 : undefined,
       height: preset.kind === "qr" ? 64 : preset.kind === "signature" ? 48 : undefined,
-      fontSize: 18,
+      fontSize: isCourseList ? 16 : 18,
       fontFamily: "Helvetica",
       color: "#111111",
-      align: "center",
+      align: isCourseList ? "left" : "center",
     };
+    // Jump to the page the new field lives on so you see it immediately.
+    if ((ph.page ?? "front") !== activePage) setActivePage(ph.page);
     setPlaceholders((prev) => [...prev, ph]);
     setSelectedId(ph.id);
   };
@@ -96,8 +118,6 @@ export function TemplateDesigner({
   const livePreview = async () => {
     setPreviewing(true);
     try {
-      // Build sample values so the admin sees a realistic certificate.
-      // The recipient name uses whatever you typed in the preview-name box.
       const sample: Record<string, string> = {};
       placeholders.forEach((p) => {
         if (p.fieldKey === "recipient_name") sample[p.fieldKey] = previewName || "Sample Name";
@@ -122,9 +142,37 @@ export function TemplateDesigner({
     }
   };
 
+  const tabClass = (page: PlaceholderPage) =>
+    [
+      "rounded-lg px-4 py-1.5 text-sm font-semibold",
+      activePage === page
+        ? "bg-brand-600 text-white"
+        : "border border-gray-300 text-gray-600 hover:bg-gray-50",
+    ].join(" ");
+
+  const countOn = (page: PlaceholderPage) =>
+    placeholders.filter((p) => (p.page ?? "front") === page).length;
+
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
       <div className="space-y-4">
+        {/* Front / Back page toggle */}
+        <div className="flex items-center gap-2">
+          <button onClick={() => setActivePage("front")} className={tabClass("front")}>
+            Front ({countOn("front")})
+          </button>
+          <button onClick={() => setActivePage("back")} className={tabClass("back")}>
+            Back ({countOn("back")})
+          </button>
+          {activePage === "back" && !backImageUrl && (
+            <span className="ml-2 text-xs text-gray-400">
+              {hasBackPdf
+                ? "Rendering back page…"
+                : "No back PDF uploaded — a clean back page is generated automatically."}
+            </span>
+          )}
+        </div>
+
         {/* Toolbar */}
         <div className="flex flex-wrap gap-2">
           {FIELD_PRESETS.map((preset) => (
@@ -139,11 +187,19 @@ export function TemplateDesigner({
         </div>
 
         <PlaceholderEditor
-          pageImageUrl={pageImageUrl}
+          key={activePage}
+          pageImageUrl={backdrop}
           pageWidth={pageWidth}
           pageHeight={pageHeight}
-          placeholders={placeholders}
-          onChange={setPlaceholders}
+          placeholders={visiblePlaceholders}
+          onChange={(updatedVisible) => {
+            // Merge edits to the visible (active-page) set back into the full
+            // placeholder list, preserving the other page's fields untouched.
+            setPlaceholders((prev) => {
+              const others = prev.filter((p) => (p.page ?? "front") !== activePage);
+              return [...others, ...updatedVisible];
+            });
+          }}
           selectedId={selectedId}
           onSelect={setSelectedId}
         />
@@ -179,8 +235,10 @@ export function TemplateDesigner({
         </div>
 
         <p className="text-xs text-gray-500">
-          The preview uses a sample name so you can check placement. The real
-          recipient name is entered on the Generate Certificate screen.
+          Editing the <span className="font-semibold">{activePage}</span> page.
+          Switch pages with the toggle above. The preview uses a sample name so
+          you can check placement; the real recipient name is entered on the
+          Generate Certificate screen.
         </p>
 
         {previewUrl && (
@@ -208,3 +266,11 @@ export function TemplateDesigner({
     </div>
   );
 }
+
+// A 1x1 white pixel data URL used as a blank backdrop for the back page when no
+// back PDF raster is available. The editor stretches it to the page aspect.
+const BLANK_PAGE =
+  "data:image/svg+xml;utf8," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="842" height="595"><rect width="100%" height="100%" fill="#ffffff" stroke="#e5e7eb"/></svg>',
+  );

@@ -16,7 +16,7 @@
 // see" equal to "what you print".
 // ============================================================================
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Placeholder } from "@/lib/domain/types";
 
 interface Props {

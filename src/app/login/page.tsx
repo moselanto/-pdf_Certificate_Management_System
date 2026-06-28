@@ -80,8 +80,8 @@ export default function LoginPage() {
             : "Set up a new login for CertForge."}
         </p>
 
-        <form onSubmit={submit} className="mt-6 space-y-4">
-          <div>
+        <form onSubmit={submit} className="mt-6 space-y-4" suppressHydrationWarning>
+          <div suppressHydrationWarning>
             <label className="block text-sm font-semibold text-gray-700">Email</label>
             <input
               type="email"
@@ -89,10 +89,11 @@ export default function LoginPage() {
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="email"
               placeholder="you@example.com"
+              suppressHydrationWarning
               className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
             />
           </div>
-          <div>
+          <div suppressHydrationWarning>
             <label className="block text-sm font-semibold text-gray-700">Password</label>
             <input
               type="password"
@@ -100,6 +101,7 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               autoComplete={mode === "signin" ? "current-password" : "new-password"}
               placeholder="••••••••"
+              suppressHydrationWarning
               className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
             />
           </div>

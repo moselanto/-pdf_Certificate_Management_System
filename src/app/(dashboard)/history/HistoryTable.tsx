@@ -18,6 +18,7 @@ export function HistoryTable() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
 
   const load = useCallback(async (query: string) => {
     setLoading(true);
@@ -60,12 +61,44 @@ export function HistoryTable() {
       const res = await fetch(`/api/certificates/${c.id}`, { method: "DELETE" });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error ?? "Delete failed");
-      // Optimistically remove the row.
       setRows((r) => r.filter((row) => row.id !== c.id));
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const onToggleRevoke = async (c: Certificate) => {
+    const revoke = c.status !== "revoked";
+    const verb = revoke ? "Revoke" : "Restore";
+    if (
+      !confirm(
+        revoke
+          ? `Revoke certificate ${c.certificate_number} for ${c.recipient_name}?\n\nThe record is kept, but anyone scanning the QR / opening the verification page will see "Certificate revoked".`
+          : `Restore certificate ${c.certificate_number}?\n\nIt will verify as valid again.`,
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    setRevokingId(c.id);
+    try {
+      const res = await fetch(`/api/certificates/${c.id}/revoke`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ revoke }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? `${verb} failed`);
+      // Update the row's status in place.
+      setRows((r) =>
+        r.map((row) => (row.id === c.id ? { ...row, status: json.status } : row)),
+      );
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setRevokingId(null);
     }
   };
 
@@ -116,50 +149,68 @@ export function HistoryTable() {
                 </td>
               </tr>
             ) : (
-              rows.map((c) => (
-                <tr key={c.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-mono text-xs">{c.certificate_number}</td>
-                  <td className="px-4 py-3 font-medium text-gray-900">{c.recipient_name}</td>
-                  <td className="px-4 py-3 text-gray-600">
-                    {new Date(c.issue_date).toLocaleDateString("en-GB", {
-                      day: "2-digit",
-                      month: "short",
-                      year: "numeric",
-                    })}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(c.status)}`}>
-                      {c.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex items-center justify-end gap-3">
-                      <a
-                        href={`/api/certificates/${c.id}/download`}
-                        className="text-xs font-medium text-brand-700 hover:underline"
-                      >
-                        Download
-                      </a>
-                      <EmailCertificate certificateId={c.id} compact />
-                      <a
-                        href={`/verify/${c.certificate_number}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-xs font-medium text-gray-600 hover:underline"
-                      >
-                        Verify
-                      </a>
-                      <button
-                        onClick={() => onDelete(c)}
-                        disabled={deletingId === c.id}
-                        className="text-xs font-medium text-red-600 hover:underline disabled:opacity-50"
-                      >
-                        {deletingId === c.id ? "Deleting…" : "Delete"}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
+              rows.map((c) => {
+                const isRevoked = c.status === "revoked";
+                return (
+                  <tr key={c.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-mono text-xs">{c.certificate_number}</td>
+                    <td className="px-4 py-3 font-medium text-gray-900">{c.recipient_name}</td>
+                    <td className="px-4 py-3 text-gray-600">
+                      {new Date(c.issue_date).toLocaleDateString("en-GB", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(c.status)}`}>
+                        {c.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-3">
+                        <a
+                          href={`/api/certificates/${c.id}/download`}
+                          className="text-xs font-medium text-brand-700 hover:underline"
+                        >
+                          Download
+                        </a>
+                        <EmailCertificate certificateId={c.id} compact />
+                        <a
+                          href={`/verify/${c.certificate_number}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs font-medium text-gray-600 hover:underline"
+                        >
+                          Verify
+                        </a>
+                        <button
+                          onClick={() => onToggleRevoke(c)}
+                          disabled={revokingId === c.id}
+                          className={`text-xs font-medium hover:underline disabled:opacity-50 ${
+                            isRevoked ? "text-green-700" : "text-amber-700"
+                          }`}
+                        >
+                          {revokingId === c.id
+                            ? isRevoked
+                              ? "Restoring…"
+                              : "Revoking…"
+                            : isRevoked
+                              ? "Restore"
+                              : "Revoke"}
+                        </button>
+                        <button
+                          onClick={() => onDelete(c)}
+                          disabled={deletingId === c.id}
+                          className="text-xs font-medium text-red-600 hover:underline disabled:opacity-50"
+                        >
+                          {deletingId === c.id ? "Deleting…" : "Delete"}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>

@@ -5,8 +5,13 @@
 //   • Toolbar to add fields (text/date/qr/signature)
 //   • PlaceholderEditor (drag-and-drop on the page raster)
 //   • FieldInspector (edit selected field)
-//   • Live preview button -> POSTs current layout + sample values to the
-//     generation API and shows the rendered PDF in an <iframe>.
+//   • Live preview -> POSTs current layout + a sample name you can edit, then
+//     shows the rendered PDF in an <iframe>.
+//
+// NOTE: Live preview uses a SAMPLE name purely so you can check placement here
+// in the designer. The real recipient name comes from the Generate Certificate
+// screen. The sample name field below lets you type any name to preview with,
+// so the preview reflects what you type rather than a fixed placeholder.
 // ============================================================================
 
 import { useMemo, useState } from "react";
@@ -47,6 +52,7 @@ export function TemplateDesigner({
   const [placeholders, setPlaceholders] = useState<Placeholder[]>(initialPlaceholders);
   const [selectedId, setSelectedId] = useState<string | undefined>();
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewName, setPreviewName] = useState("Jane W. Mwangi");
   const [saving, setSaving] = useState(false);
   const [previewing, setPreviewing] = useState(false);
 
@@ -56,6 +62,7 @@ export function TemplateDesigner({
   );
 
   const addField = (preset: (typeof FIELD_PRESETS)[number]) => {
+    const isImage = preset.kind === "qr" || preset.kind === "signature";
     const ph: Placeholder = {
       id: newId(),
       page: "front",
@@ -64,8 +71,9 @@ export function TemplateDesigner({
       label: preset.label,
       x: Math.round(pageWidth / 2),
       y: Math.round(pageHeight / 2),
-      width: preset.kind === "qr" || preset.kind === "signature" ? 96 : undefined,
-      height: preset.kind === "qr" || preset.kind === "signature" ? 96 : undefined,
+      // Smaller, sensible defaults: QR 64pt, signature 120x48pt.
+      width: preset.kind === "qr" ? 64 : preset.kind === "signature" ? 120 : undefined,
+      height: preset.kind === "qr" ? 64 : preset.kind === "signature" ? 48 : undefined,
       fontSize: 18,
       fontFamily: "Helvetica",
       color: "#111111",
@@ -88,11 +96,13 @@ export function TemplateDesigner({
     setPreviewing(true);
     try {
       // Build sample values so the admin sees a realistic certificate.
+      // The recipient name uses whatever you typed in the preview-name box.
       const sample: Record<string, string> = {};
       placeholders.forEach((p) => {
-        if (p.fieldKey === "recipient_name") sample[p.fieldKey] = "Jane W. Mwangi";
+        if (p.fieldKey === "recipient_name") sample[p.fieldKey] = previewName || "Sample Name";
         else if (p.fieldKey === "issue_date") sample[p.fieldKey] = new Date().toLocaleDateString();
         else if (p.fieldKey === "certificate_number") sample[p.fieldKey] = "CF-2026-7QK3M9";
+        else if (p.fieldKey === "trainer_name") sample[p.fieldKey] = "Lydia Kasera-Kwoba";
         else if (p.kind === "text") sample[p.fieldKey] = p.label;
       });
 
@@ -137,7 +147,7 @@ export function TemplateDesigner({
           onSelect={setSelectedId}
         />
 
-        <div className="flex gap-3">
+        <div className="flex flex-wrap items-end gap-3">
           <button
             onClick={save}
             disabled={saving}
@@ -145,6 +155,19 @@ export function TemplateDesigner({
           >
             {saving ? "Saving…" : "Save layout"}
           </button>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-500">
+              Preview name (sample only)
+            </label>
+            <input
+              value={previewName}
+              onChange={(e) => setPreviewName(e.target.value)}
+              placeholder="Type a name to preview"
+              className="mt-1 w-56 rounded-lg border-gray-300 text-sm"
+            />
+          </div>
+
           <button
             onClick={livePreview}
             disabled={previewing}
@@ -153,6 +176,11 @@ export function TemplateDesigner({
             {previewing ? "Rendering…" : "Live preview"}
           </button>
         </div>
+
+        <p className="text-xs text-gray-500">
+          The preview uses a sample name so you can check placement. The real
+          recipient name is entered on the Generate Certificate screen.
+        </p>
 
         {previewUrl && (
           <iframe

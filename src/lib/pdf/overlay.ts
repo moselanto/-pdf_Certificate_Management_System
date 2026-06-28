@@ -8,6 +8,11 @@
 // Coordinate convention:
 //   Placeholders use a TOP-LEFT origin (matches the browser editor).
 //   pdf-lib uses a BOTTOM-LEFT origin. We convert with: pdfY = pageHeight - y.
+//
+// SIGNATURE: a "signature" placeholder renders EITHER an uploaded signature
+// image (PNG) when one is provided in input.images, OR a typed signature as
+// styled text (from input.values) when no image exists. This lets a trainer
+// use a scanned/drawn signature or simply a typed name.
 // ============================================================================
 
 import {
@@ -34,6 +39,7 @@ function standardFontFor(family: string): StandardFonts {
   if (f.includes("times")) return StandardFonts.TimesRoman;
   if (f.includes("courier")) return StandardFonts.Courier;
   if (f.includes("bold")) return StandardFonts.HelveticaBold;
+  if (f.includes("oblique") || f.includes("italic")) return StandardFonts.HelveticaOblique;
   return StandardFonts.Helvetica;
 }
 
@@ -42,8 +48,9 @@ function drawAlignedText(
   text: string,
   ph: Placeholder,
   font: PDFFont,
+  fontSizeOverride?: number,
 ) {
-  const size = ph.fontSize;
+  const size = fontSizeOverride ?? ph.fontSize;
   const color = hexToRgb(ph.color);
   const textWidth = font.widthOfTextAtSize(text, size);
   const pageHeight = page.getHeight();
@@ -105,9 +112,27 @@ export async function renderCertificate(input: RenderInput): Promise<Uint8Array>
     const page = ph.page === "back" ? backPage : frontPage;
     if (!page) continue; // back placeholder but no back page — skip safely
 
-    if (ph.kind === "qr" || ph.kind === "image" || ph.kind === "signature") {
+    if (ph.kind === "qr" || ph.kind === "image") {
       const bytes = input.images?.[ph.fieldKey];
       if (bytes) await drawImage(out, page, bytes, ph);
+      continue;
+    }
+
+    if (ph.kind === "signature") {
+      // Prefer an uploaded signature image; otherwise fall back to a typed
+      // signature rendered in an italic/script-like standard font.
+      const bytes = input.images?.[ph.fieldKey];
+      if (bytes) {
+        await drawImage(out, page, bytes, ph);
+      } else {
+        const typed = input.values[ph.fieldKey];
+        if (typed) {
+          const font = await getFont("Helvetica-Oblique");
+          // Scale the typed signature to roughly fit the placeholder height.
+          const sigSize = ph.height ? Math.min(ph.fontSize * 1.4, ph.height * 0.8) : ph.fontSize * 1.4;
+          drawAlignedText(page, typed, ph, font, sigSize);
+        }
+      }
       continue;
     }
 

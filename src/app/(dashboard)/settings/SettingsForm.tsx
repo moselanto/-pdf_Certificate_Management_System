@@ -162,7 +162,7 @@ export function SettingsForm({
             value={orgName}
             onChange={(e) => setOrgName(e.target.value)}
             placeholder="Pimofy Training Institute"
-            className="mt-1 w-full rounded-lg border-gray-300 text-sm"
+            className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
           />
           <p className="mt-1 text-xs text-gray-500">
             Shown as the default &ldquo;Issued by&rdquo; on certificate
@@ -241,10 +241,17 @@ export function SettingsForm({
       <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-6">
         <h3 className="text-sm font-semibold text-gray-900">Custom fonts</h3>
         <p className="text-xs text-gray-500">
-          Upload a TrueType (.ttf) or OpenType (.otf) font, then reference its
-          name from a text field&apos;s Font in the template designer to print
-          with it. Falls back to a standard font if a font is missing. Under
-          2&nbsp;MB.
+          Build your font library here. Upload a TrueType (.ttf) or OpenType
+          (.otf) file for each font you want (e.g. Myriad Pro, Akrobat,
+          Architext, Edwardian Script ITC). Once uploaded, a font appears in the
+          Font picker in the template designer — for both dynamic fields and the
+          Draw / from-scratch text tool. The engine falls back to a standard
+          font if one is missing. Each file must be under 2&nbsp;MB.
+        </p>
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          Only upload fonts you are licensed to use. Commercial typefaces such
+          as Myriad Pro and Edwardian Script ITC require you to provide your own
+          licensed font file; we can&apos;t supply them.
         </p>
 
         {fonts.length > 0 ? (

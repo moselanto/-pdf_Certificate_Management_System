@@ -51,7 +51,17 @@ export async function GET(
   return NextResponse.json({ template: { ...tpl, frontUrl: signed?.signedUrl ?? null } });
 }
 
-const patchSchema = z.object({ archived: z.boolean() });
+// PATCH accepts either an archive toggle, a certificate_title update, or both.
+// At least one field must be present. certificate_title is the per-template
+// title that fills a "certificate_title" placeholder at generation + preview.
+const patchSchema = z
+  .object({
+    archived: z.boolean().optional(),
+    certificate_title: z.string().max(300).nullable().optional(),
+  })
+  .refine((v) => v.archived !== undefined || v.certificate_title !== undefined, {
+    message: "nothing to update",
+  });
 
 export async function PATCH(
   req: NextRequest,

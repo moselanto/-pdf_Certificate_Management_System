@@ -157,6 +157,51 @@ export function TemplateDesigner({
   const [logoError, setLogoError] = useState<string | null>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
+  // --- Certificate title state ---------------------------------------------
+  // The template carries ONE certificate title (templates.certificate_title).
+  // It fills a "certificate_title" placeholder at generation + preview so the
+  // printed title matches what's typed here once, per template.
+  const [certTitle, setCertTitle] = useState("");
+  const [certTitleSaved, setCertTitleSaved] = useState("");
+  const [certTitleBusy, setCertTitleBusy] = useState(false);
+  const [certTitleError, setCertTitleError] = useState<string | null>(null);
+
+  // Load the saved certificate title (if any) when the designer opens.
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/templates/${templateId}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled) return;
+        const t = (j?.template?.certificate_title as string | null) ?? "";
+        setCertTitle(t);
+        setCertTitleSaved(t);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [templateId]);
+
+  const saveCertTitle = async () => {
+    setCertTitleBusy(true);
+    setCertTitleError(null);
+    try {
+      const res = await fetch(`/api/templates/${templateId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ certificate_title: certTitle }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error ?? "Could not save title");
+      setCertTitleSaved(certTitle);
+    } catch (e) {
+      setCertTitleError((e as Error).message);
+    } finally {
+      setCertTitleBusy(false);
+    }
+  };
+
   // Load the current logo (if any) when the designer opens.
   useEffect(() => {
     let cancelled = false;
@@ -472,6 +517,44 @@ export function TemplateDesigner({
             </span>
           </div>
         )}
+
+        {/* Certificate title (per-template) */}
+        <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-4">
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="flex-1">
+              <label className="text-sm font-semibold text-gray-800" htmlFor="cert-title">
+                Certificate title
+              </label>
+              <p className="mb-2 text-xs text-gray-500">
+                The title printed on every certificate from this template (e.g.
+                &ldquo;OF MOVING AND HANDLING&rdquo;). Add the{" "}
+                <span className="font-medium">+ Certificate Title</span> field and drag
+                it into place — it prints exactly as typed here, including capitalisation.
+              </p>
+              <input
+                id="cert-title"
+                type="text"
+                value={certTitle}
+                maxLength={300}
+                onChange={(e) => setCertTitle(e.target.value)}
+                placeholder="e.g. OF MOVING AND HANDLING"
+                className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              />
+            </div>
+            <button
+              onClick={saveCertTitle}
+              disabled={certTitleBusy || certTitle === certTitleSaved}
+              className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+            >
+              {certTitleBusy
+                ? "Saving…"
+                : certTitle === certTitleSaved
+                  ? "Saved"
+                  : "Save title"}
+            </button>
+          </div>
+          {certTitleError && <p className="mt-2 text-xs text-red-600">{certTitleError}</p>}
+        </div>
 
         {/* Logo upload control */}
         <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-4">

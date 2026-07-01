@@ -58,7 +58,7 @@ export async function generateCertificate(
   const { data: template, error: tErr } = await db
     .from("templates")
     .select(
-      "id, front_pdf_path, back_pdf_path, logo_path, is_from_scratch, design_elements, blank_page_size",
+      "id, front_pdf_path, back_pdf_path, logo_path, is_from_scratch, design_elements, blank_page_size, certificate_title",
     )
     .eq("id", args.templateId)
     .single();
@@ -123,6 +123,10 @@ export async function generateCertificate(
       year: "numeric",
     }),
     certificate_number: certificateNumber,
+    // Per-template certificate title (templates.certificate_title). Supplies the
+    // value for a "certificate_title" placeholder so the printed title matches
+    // what the user typed once on the template. Explicit args.values overrides.
+    ...(template.certificate_title ? { certificate_title: String(template.certificate_title) } : {}),
     ...(trainerName ? { trainer_name: trainerName, trainer_signature: trainerName } : {}),
     ...args.values,
   };

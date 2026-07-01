@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
     const { data: template, error } = await db
       .from("templates")
       .select(
-        "front_pdf_path, back_pdf_path, logo_path, is_from_scratch, design_elements, blank_page_size",
+        "front_pdf_path, back_pdf_path, logo_path, is_from_scratch, design_elements, blank_page_size, certificate_title",
       )
       .eq("id", body.templateId)
       .single();
@@ -161,6 +161,16 @@ export async function POST(req: NextRequest) {
     // bundled set + standard fonts.)
     const customFonts = await loadBundledFonts();
 
+    // Prefill certificate_title from the template's saved column so the live
+    // preview matches what will print. The editor's own values still win: if
+    // the user typed a certificate_title sample, body.values overrides this.
+    const previewValues: Record<string, string> = {
+      ...(template.certificate_title
+        ? { certificate_title: String(template.certificate_title) }
+        : {}),
+      ...body.values,
+    };
+
     const pdfBytes = await renderCertificate({
       frontPdf,
       backPdf,
@@ -170,7 +180,7 @@ export async function POST(req: NextRequest) {
         ...p,
         id: p.id ?? Math.random().toString(36),
       })),
-      values: body.values,
+      values: previewValues,
       images,
       units,
       customFonts,

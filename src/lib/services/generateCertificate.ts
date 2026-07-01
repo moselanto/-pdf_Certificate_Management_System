@@ -115,7 +115,26 @@ export async function generateCertificate(
   });
 
   // 5. Assemble field values
+  //
+  // Static text fields (e.g. Certificate Title, or any custom text label the
+  // designer typed) carry their printed text in the placeholder's `label`.
+  // Text placeholders render via values[fieldKey], so we seed a value from the
+  // label for every text field first. This mirrors the live preview, which
+  // does exactly the same (sample[p.fieldKey] = p.label), so a Certificate
+  // Title that shows in preview now also prints on the generated PDF.
+  //
+  // The dynamic per-recipient fields below (recipient_name, issue_date,
+  // certificate_number, trainer_name) then override their own keys, and any
+  // explicit args.values override everything last.
+  const textFieldDefaults: Record<string, string> = {};
+  for (const p of placeholders) {
+    if (p.kind === "text" && p.fieldKey && p.label) {
+      textFieldDefaults[p.fieldKey] = p.label;
+    }
+  }
+
   const values: Record<string, string> = {
+    ...textFieldDefaults,
     recipient_name: args.recipientName,
     issue_date: new Date(args.issueDate).toLocaleDateString("en-GB", {
       day: "2-digit",

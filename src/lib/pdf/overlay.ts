@@ -30,7 +30,18 @@ import {
   type RGB,
 } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import type { Placeholder, RenderInput } from "@/lib/domain/types";
+import type {
+  DesignElement,
+  DesignLineElement,
+  DesignRectElement,
+  DesignTextElement,
+  PageSize,
+  Placeholder,
+  RenderInput,
+} from "@/lib/domain/types";
+
+// Default page size for a from-scratch certificate when none is supplied.
+const DEFAULT_BLANK_PAGE: PageSize = { width: 842, height: 595 }; // A4 landscape
 
 function hexToRgb(hex: string): RGB {
   const m = /^#?([0-9a-fA-F]{6})$/.exec(hex.trim());
@@ -135,6 +146,74 @@ async function drawImage(
   page.drawImage(img, { x: ph.x, y, width: boxW, height: boxH });
 }
 
+// ============================================================================
+// Design-element drawing (from-scratch builder). These render STATIC artwork
+// (fixed text, lines, rectangles) using the same top-left origin as
+// placeholders, converting to pdf-lib's bottom-left origin with pageHeight - y.
+// ============================================================================
+
+async function drawDesignText(
+  page: PDFPage,
+  el: DesignTextElement,
+  getFont: (family: string) => Promise<PDFFont>,
+) {
+  const text = el.text ?? "";
+  if (!text) return;
+  const size = el.fontSize || 16;
+  const color = hexToRgb(el.color);
+  const font = await getFont(el.fontFamily);
+  const pageHeight = page.getHeight();
+
+  // Optional word-wrap when a width is set; otherwise a single line.
+  const lines =
+    el.width && el.width > 0 ? wrapToWidth(text, font, size, el.width) : [text];
+  const gap = el.lineGap ?? Math.round(size * 0.35);
+  const lineStep = size + gap;
+
+  let topY = el.y;
+  for (const line of lines) {
+    const lineWidth = font.widthOfTextAtSize(line, size);
+    let x = el.x;
+    if (el.align === "center") x = el.x - lineWidth / 2;
+    else if (el.align === "right") x = el.x - lineWidth;
+    const yBaseline = pageHeight - topY - size;
+    page.drawText(line, { x, y: yBaseline, size, font, color });
+    topY += lineStep;
+  }
+}
+
+function drawDesignLine(page: PDFPage, el: DesignLineElement) {
+  const pageHeight = page.getHeight();
+  page.drawLine({
+    start: { x: el.x, y: pageHeight - el.y },
+    end: { x: el.x2, y: pageHeight - el.y2 },
+    thickness: el.thickness || 1,
+    color: hexToRgb(el.color),
+  });
+}
+
+function drawDesignRect(page: PDFPage, el: DesignRectElement) {
+  const pageHeight = page.getHeight();
+  // Top-left origin: convert the top-left corner to pdf-lib's bottom-left by
+  // subtracting the height as well, since pdf-lib positions rects by their
+  // bottom-left corner.
+  const y = pageHeight - el.y - el.height;
+  const opts: Parameters<PDFPage["drawRectangle"]>[0] = {
+    x: el.x,
+    y,
+    width: el.width,
+    height: el.height,
+  };
+  if (el.fillColor) opts.color = hexToRgb(el.fillColor);
+  if (el.strokeColor) {
+    opts.borderColor = hexToRgb(el.strokeColor);
+    opts.borderWidth = el.strokeWidth ?? 1;
+  }
+  // pdf-lib supports rounded corners via the (undocumented but stable) rx/ry
+  // — but to stay on the typed API we approximate: only apply when supported.
+  page.drawRectangle(opts);
+}
+
 /**
  * Render a certificate PDF from a template + values.
  * Returns the finished PDF as bytes (ready to upload or stream for download).
@@ -143,9 +222,20 @@ export async function renderCertificate(input: RenderInput): Promise<Uint8Array>
   const out = await PDFDocument.create();
 
   // --- FRONT ---------------------------------------------------------------
-  const frontSrc = await PDFDocument.load(input.frontPdf);
-  const [frontPage] = await out.copyPages(frontSrc, [0]);
-  out.addPage(frontPage);
+  // Two modes:
+  //   1. TEMPLATE mode: an uploaded frontPdf is copied in and drawn on top of.
+  //   2. FROM-SCRATCH mode: no frontPdf, so we create a blank page sized by
+  //      input.blankPage (default A4 landscape). designElements form the
+  //      background artwork; placeholders and course units render on top.
+  let frontPage: PDFPage;
+  if (input.frontPdf) {
+    const frontSrc = await PDFDocument.load(input.frontPdf);
+    const [fp] = await out.copyPages(frontSrc, [0]);
+    frontPage = out.addPage(fp);
+  } else {
+    const size = input.blankPage ?? DEFAULT_BLANK_PAGE;
+    frontPage = out.addPage([size.width, size.height]);
+  }
   const frontWidth = frontPage.getWidth();
   const frontHeight = frontPage.getHeight();
 
@@ -202,6 +292,27 @@ export async function renderCertificate(input: RenderInput): Promise<Uint8Array>
   if (input.units?.length && !backPage) {
     backPage = out.addPage([frontWidth, frontHeight]);
     backWasAutoCreated = true;
+  }
+
+  // --- Design elements (from-scratch artwork) ------------------------------
+  // Drawn BEFORE placeholders so dynamic fields (name, QR, etc.) sit on top of
+  // the static artwork. Elements are sorted by optional z so the designer can
+  // control layering (e.g. a filled panel behind its text).
+  if (input.designElements?.length) {
+    const sorted = [...input.designElements].sort(
+      (a, b) => (a.z ?? 0) - (b.z ?? 0),
+    );
+    for (const el of sorted) {
+      const page = el.page === "back" ? backPage : frontPage;
+      if (!page) continue; // back element but no back page — skip safely
+      if (el.kind === "text") {
+        await drawDesignText(page, el, getFont);
+      } else if (el.kind === "line") {
+        drawDesignLine(page, el);
+      } else if (el.kind === "rect") {
+        drawDesignRect(page, el);
+      }
+    }
   }
 
   // --- Placeholders --------------------------------------------------------

@@ -70,18 +70,9 @@ export async function generateCertificate(
     .eq("template_id", args.templateId);
   const placeholders: Placeholder[] = (phRows ?? []).map(mapPlaceholder);
 
-  // 2. Resolve course units (back page) + the course title (used as the
-  //    value for a "certificate_title" placeholder when present).
+  // 2. Resolve course units (back page)
   let units: CourseUnit[] = [];
-  let courseTitle: string | undefined;
   if (args.courseId) {
-    const { data: course } = await db
-      .from("courses")
-      .select("title")
-      .eq("id", args.courseId)
-      .single();
-    courseTitle = course?.title ?? undefined;
-
     const { data: unitRows } = await db
       .from("course_units")
       .select("id, sort_order, title")
@@ -132,11 +123,6 @@ export async function generateCertificate(
       year: "numeric",
     }),
     certificate_number: certificateNumber,
-    // certificate_title defaults to the selected course's title so a
-    // "certificate_title" placeholder renders in the generated PDF (previously
-    // it was blank because no value was supplied). An explicit value in
-    // args.values still overrides this via the spread below.
-    ...(courseTitle ? { certificate_title: courseTitle } : {}),
     ...(trainerName ? { trainer_name: trainerName, trainer_signature: trainerName } : {}),
     ...args.values,
   };

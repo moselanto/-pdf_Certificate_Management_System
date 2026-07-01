@@ -58,7 +58,7 @@ export async function generateCertificate(
   const { data: template, error: tErr } = await db
     .from("templates")
     .select(
-      "id, front_pdf_path, back_pdf_path, logo_path, is_from_scratch, design_elements, blank_page_size",
+      "id, front_pdf_path, back_pdf_path, logo_path, is_from_scratch, design_elements, blank_page_size, certificate_title",
     )
     .eq("id", args.templateId)
     .single();
@@ -123,6 +123,13 @@ export async function generateCertificate(
       year: "numeric",
     }),
     certificate_number: certificateNumber,
+    // Certificate title: seed from the template's saved certificate_title so it
+    // prints on the generated PDF exactly as it appears in the live preview
+    // (the preview route seeds it the same way). An explicit args.values entry
+    // still wins.
+    ...(template.certificate_title
+      ? { certificate_title: String(template.certificate_title) }
+      : {}),
     ...(trainerName ? { trainer_name: trainerName, trainer_signature: trainerName } : {}),
     ...args.values,
   };

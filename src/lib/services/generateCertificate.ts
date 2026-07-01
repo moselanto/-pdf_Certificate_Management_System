@@ -167,10 +167,11 @@ export async function generateCertificate(
     }
   }
 
-  // 7. Render. Two modes:
-  //   • FROM-SCRATCH: no front PDF — build a blank page (blank_page_size) and
-  //     draw the saved design_elements as the background.
+  // 7. Render. Two backdrop modes, but design elements draw in BOTH:
+  //   • FROM-SCRATCH: no front PDF — build a blank page (blank_page_size).
   //   • PDF TEMPLATE: download the front (and optional back) PDF as before.
+  // Either way, saved design_elements (text/line/rect) are drawn on top of the
+  // backdrop, so drawn artwork works on uploaded PDFs too — not just scratch.
   const isFromScratch = Boolean(template.is_from_scratch) || !template.front_pdf_path;
 
   let frontPdf: Uint8Array | undefined;
@@ -182,10 +183,11 @@ export async function generateCertificate(
       : undefined;
   }
 
-  // From-scratch artwork + page size (top-left origin, points).
-  const designElements = isFromScratch && Array.isArray(template.design_elements)
+  // Saved artwork (top-left origin, points) — drawn regardless of template type.
+  const designElements = Array.isArray(template.design_elements)
     ? (template.design_elements as DesignElement[])
     : undefined;
+  // Blank page size only applies to from-scratch (no PDF) templates.
   const blankPage =
     isFromScratch && template.blank_page_size
       ? (template.blank_page_size as { width: number; height: number })

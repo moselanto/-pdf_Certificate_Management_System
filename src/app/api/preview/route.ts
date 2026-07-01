@@ -49,7 +49,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "template not found" }, { status: 404 });
     }
 
-    // FROM-SCRATCH templates have no PDF: render a blank page + design elements.
+    // FROM-SCRATCH templates have no PDF: render a blank page. PDF templates
+    // download the PDF backdrop. In BOTH cases we draw design elements
+    // (text/line/rect) on top — so drawn artwork works on uploaded PDFs too,
+    // not only from-scratch templates.
     const isFromScratch = Boolean(template.is_from_scratch) || !template.front_pdf_path;
     const frontPdf = isFromScratch
       ? undefined
@@ -58,10 +61,11 @@ export async function POST(req: NextRequest) {
       !isFromScratch && template.back_pdf_path
         ? await downloadTemplate(db, template.back_pdf_path)
         : undefined;
-    const designElements =
-      isFromScratch && Array.isArray(template.design_elements)
-        ? template.design_elements
-        : undefined;
+    // Draw saved design elements regardless of template type.
+    const designElements = Array.isArray(template.design_elements)
+      ? template.design_elements
+      : undefined;
+    // Blank page size only applies to from-scratch (no PDF) templates.
     const blankPage =
       isFromScratch && template.blank_page_size ? template.blank_page_size : undefined;
 

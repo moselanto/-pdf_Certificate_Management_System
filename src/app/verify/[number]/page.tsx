@@ -47,12 +47,12 @@ export default async function VerifyPage({
     <main className="mx-auto flex min-h-screen max-w-lg flex-col items-center justify-center p-6">
       <div className="w-full rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
         <div className="mb-6 flex items-center gap-3">
-          <Image
+          {/* Plain <img> (not next/image): serves the raw SVG from /public and
+              avoids the image optimizer, which the auth middleware redirects. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
             src="/icon.svg"
             alt="CertForge"
-            width={40}
-            height={40}
-            priority
             className="h-10 w-10 rounded-lg"
           />
           <span className="text-lg font-bold text-gray-900">CertForge Verify</span>

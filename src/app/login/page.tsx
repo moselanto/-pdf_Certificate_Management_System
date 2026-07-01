@@ -61,14 +61,10 @@ export default function LoginPage() {
     <main className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
       <div className="w-full max-w-sm rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
         <div className="mb-6 flex justify-center">
-          <Image
-            src="/logo.svg"
-            alt="CertForge"
-            width={200}
-            height={60}
-            priority
-            className="h-10 w-auto"
-          />
+          {/* Plain <img> (not next/image): serves the raw SVG from /public and
+              avoids the image optimizer, which the auth middleware redirects. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.svg" alt="CertForge" className="h-10 w-auto" />
         </div>
 
         <h1 className="text-xl font-bold text-gray-900">

@@ -1,4 +1,3 @@
-import Image from "next/image";
 import Link from "next/link";
 
 const NAV = [
@@ -18,14 +17,11 @@ export function Sidebar() {
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-gray-200 bg-white">
       <Link href="/dashboard" className="flex items-center px-5 py-5">
-        <Image
-          src="/logo.svg"
-          alt="CertForge"
-          width={180}
-          height={54}
-          priority
-          className="h-9 w-auto"
-        />
+        {/* Plain <img> (not next/image): serves the raw SVG from /public and
+            avoids the image optimizer, which was being redirected by the auth
+            middleware and left the logo broken in production. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo.svg" alt="CertForge" className="h-9 w-auto" />
       </Link>
       <nav className="flex-1 space-y-1 px-3 py-2">
         {NAV.map((item) => (

@@ -16,6 +16,11 @@ const PUBLIC_PREFIXES = [
   "/api/verify",
   "/_next",
   "/favicon",
+  // Static brand assets in /public — must never be redirected to /login,
+  // or the logo/icon render as broken images.
+  "/logo",
+  "/icon",
+  "/apple-touch-icon",
 ];
 
 // Shape of a single cookie passed to the SSR client's setAll callback.

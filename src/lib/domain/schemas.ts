@@ -27,6 +27,8 @@ export const placeholderSchema = z.object({
   fontFamily: z.string().default("Helvetica"),
   color: hexColor.default("#111111"),
   align: textAlign.default("left"),
+  // text/date: synthetic bold (engine strokes the glyph outline).
+  bold: z.boolean().optional(),
   // QR appearance (optional)
   qrDark: hexColor.optional(),
   qrLight: hexColor.optional(),
@@ -55,6 +57,7 @@ export const designTextSchema = z.object({
   fontFamily: z.string().default("Helvetica"),
   color: hexColor.default("#111111"),
   align: textAlign.default("left"),
+  bold: z.boolean().optional(),
   width: z.number().optional(),
   lineGap: z.number().optional(),
 });

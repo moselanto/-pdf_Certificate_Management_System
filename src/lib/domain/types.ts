@@ -30,6 +30,10 @@ export interface Placeholder {
   fontFamily: string;
   color: string; // hex, e.g. "#111111"
   align: TextAlign;
+  // text/date-only: render bold. Since bundled/custom fonts ship as a single
+  // (regular) weight, the engine applies SYNTHETIC bold (a thin glyph outline
+  // stroke) so any font can be bolded without a separate bold file.
+  bold?: boolean;
   // QR-only appearance (optional). qrDark = module color, qrLight = background.
   // Set qrTransparent true to render the QR background transparent — useful on
   // dark certificate backgrounds together with a light qrDark color.
@@ -77,6 +81,8 @@ export interface DesignTextElement extends DesignElementBase {
   fontFamily: string;
   color: string; // hex
   align: TextAlign;
+  /** Render bold via synthetic bold (glyph outline stroke). Any font can bold. */
+  bold?: boolean;
   /** Optional wrap width in points; when set, text word-wraps to this width. */
   width?: number;
   lineGap?: number; // extra points between wrapped lines (default derived from size)

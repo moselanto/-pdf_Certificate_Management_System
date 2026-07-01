@@ -190,6 +190,16 @@ function TextFields({
           </select>
         </Row>
       </div>
+      <Row label="Weight">
+        <select
+          value={el.bold ? "bold" : "regular"}
+          onChange={(e) => onChange({ ...el, bold: e.target.value === "bold" })}
+          className={inputCls}
+        >
+          <option value="regular">Regular</option>
+          <option value="bold">Bold</option>
+        </select>
+      </Row>
       <Row label="Wrap width (pt, optional)">
         <input
           type="number"

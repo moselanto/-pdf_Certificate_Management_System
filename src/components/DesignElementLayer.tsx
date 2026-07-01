@@ -246,6 +246,8 @@ export function DesignElementLayer({
                 // the designer). Falls back to a default if a face isn't
                 // loaded, matching the PDF engine's own fallback.
                 fontFamily: el.fontFamily || undefined,
+                // Show bold live on the canvas (synthetic bold in the PDF).
+                fontWeight: el.bold ? 700 : undefined,
                 color: el.color,
                 background: isSel ? "rgba(37,99,235,0.06)" : "transparent",
               }}

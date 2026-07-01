@@ -201,6 +201,17 @@ export function FieldInspector({ placeholder, onChange, onDelete }: Props) {
               </select>
             </div>
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-600">Weight</label>
+              <select className="mt-1 w-full rounded border-gray-300 text-sm"
+                value={p.bold ? "bold" : "regular"}
+                onChange={(e) => set({ bold: e.target.value === "bold" })}>
+                <option value="regular">Regular</option>
+                <option value="bold">Bold</option>
+              </select>
+            </div>
+          </div>
         </>
       )}
 

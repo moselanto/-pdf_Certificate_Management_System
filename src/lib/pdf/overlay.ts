@@ -61,6 +61,19 @@ function standardFontFor(family: string): StandardFonts {
   return StandardFonts.Helvetica;
 }
 
+// Synthetic bold: pdf-lib can draw a glyph outline stroke on top of the fill.
+// Stroking with the fill color at ~4% of the font size thickens every stroke,
+// approximating a bold weight for fonts that ship only a regular file (all our
+// bundled fonts + single-file custom uploads). This keeps "Bold" working on
+// EVERY font without needing a separate bold face.
+function boldStrokeOpts(size: number, color: RGB) {
+  return {
+    // borderWidth on drawText maps to the text render mode "fill + stroke".
+    borderWidth: Math.max(0.4, size * 0.04),
+    borderColor: color,
+  };
+}
+
 function drawAlignedText(
   page: PDFPage,
   text: string,
@@ -80,7 +93,14 @@ function drawAlignedText(
   // Convert top-left origin to pdf-lib bottom-left; y marks the text baseline.
   const y = pageHeight - ph.y - size;
 
-  page.drawText(text, { x, y, size, font, color });
+  page.drawText(text, {
+    x,
+    y,
+    size,
+    font,
+    color,
+    ...(ph.bold ? boldStrokeOpts(size, color) : {}),
+  });
 }
 
 // Greedy word-wrap: split `text` into lines that each fit within `maxWidth`
@@ -170,6 +190,8 @@ async function drawDesignText(
   const gap = el.lineGap ?? Math.round(size * 0.35);
   const lineStep = size + gap;
 
+  const boldOpts = el.bold ? boldStrokeOpts(size, color) : {};
+
   let topY = el.y;
   for (const line of lines) {
     const lineWidth = font.widthOfTextAtSize(line, size);
@@ -177,7 +199,7 @@ async function drawDesignText(
     if (el.align === "center") x = el.x - lineWidth / 2;
     else if (el.align === "right") x = el.x - lineWidth;
     const yBaseline = pageHeight - topY - size;
-    page.drawText(line, { x, y: yBaseline, size, font, color });
+    page.drawText(line, { x, y: yBaseline, size, font, color, ...boldOpts });
     topY += lineStep;
   }
 }

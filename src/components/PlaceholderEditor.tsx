@@ -207,6 +207,8 @@ export function PlaceholderEditor({
                   // loaded the browser falls back to a default, matching the
                   // engine. Skip for image-type chips (no text to style).
                   fontFamily: isImage ? undefined : ph.fontFamily || undefined,
+                  // Show bold live on the canvas (synthetic bold in the PDF).
+                  fontWeight: !isImage && ph.bold ? 700 : undefined,
                   width: isImage && ph.width ? ph.width * scale : undefined,
                   height: isImage && ph.height ? ph.height * scale : undefined,
                   padding: ph.kind === "course_list" ? 0 : undefined,

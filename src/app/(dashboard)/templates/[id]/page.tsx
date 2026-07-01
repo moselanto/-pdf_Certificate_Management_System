@@ -15,23 +15,32 @@ export default async function TemplateDesignPage({
 
   const { data: tpl } = await db
     .from("templates")
-    .select("id, name, front_pdf_path, back_pdf_path, page_width, page_height")
+    .select(
+      "id, name, front_pdf_path, back_pdf_path, page_width, page_height, is_from_scratch",
+    )
     .eq("id", params.id)
     .single();
 
   if (!tpl) notFound();
 
-  // Signed URLs let the browser fetch the PDF bytes to rasterize the backdrops.
-  const { data: frontSigned } = await db.storage
-    .from(TEMPLATE_BUCKET)
-    .createSignedUrl(tpl.front_pdf_path, 60 * 30);
+  const isFromScratch = Boolean(tpl.is_from_scratch) || !tpl.front_pdf_path;
 
+  // Signed URLs let the browser fetch the PDF bytes to rasterize the backdrops.
+  // From-scratch templates have no PDF, so skip signing and use a blank canvas.
+  let frontUrl = "";
   let backUrl = "";
-  if (tpl.back_pdf_path) {
-    const { data: backSigned } = await db.storage
+  if (!isFromScratch) {
+    const { data: frontSigned } = await db.storage
       .from(TEMPLATE_BUCKET)
-      .createSignedUrl(tpl.back_pdf_path, 60 * 30);
-    backUrl = backSigned?.signedUrl ?? "";
+      .createSignedUrl(tpl.front_pdf_path, 60 * 30);
+    frontUrl = frontSigned?.signedUrl ?? "";
+
+    if (tpl.back_pdf_path) {
+      const { data: backSigned } = await db.storage
+        .from(TEMPLATE_BUCKET)
+        .createSignedUrl(tpl.back_pdf_path, 60 * 30);
+      backUrl = backSigned?.signedUrl ?? "";
+    }
   }
 
   return (
@@ -39,17 +48,19 @@ export default async function TemplateDesignPage({
       <div>
         <h2 className="text-2xl font-bold text-gray-900">{tpl.name}</h2>
         <p className="text-sm text-gray-500">
-          Drag fields onto the certificate, then save. Use the Front / Back
-          toggle to design each page, and Live preview to see a rendered PDF.
+          {isFromScratch
+            ? "Draw your certificate from scratch (Draw / from scratch mode), then place dynamic fields. Save and use Live preview to see a rendered PDF."
+            : "Drag fields onto the certificate, then save. Use the Front / Back toggle to design each page, and Live preview to see a rendered PDF."}
         </p>
       </div>
 
       <TemplateDesignerClient
         templateId={tpl.id}
-        frontPdfUrl={frontSigned?.signedUrl ?? ""}
+        frontPdfUrl={frontUrl}
         backPdfUrl={backUrl}
         pageWidth={tpl.page_width ?? 842}
         pageHeight={tpl.page_height ?? 595}
+        isFromScratch={isFromScratch}
       />
     </div>
   );

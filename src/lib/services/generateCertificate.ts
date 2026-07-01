@@ -10,7 +10,7 @@ import { qrPng, verificationUrl } from "@/lib/qr/qr";
 import { generateCertificateNumber } from "@/lib/pdf/certificateNumber";
 import { downloadTemplate, uploadCertificate } from "@/lib/supabase/storage";
 import { computeIntegrityHash, INTEGRITY_ALG } from "@/lib/pdf/integrity";
-import type { Placeholder, CourseUnit } from "@/lib/domain/types";
+import type { Placeholder, CourseUnit, DesignElement } from "@/lib/domain/types";
 
 export interface GenerateArgs {
   orgId: string;
@@ -43,7 +43,9 @@ export async function generateCertificate(
   // 1. Load template + placeholders
   const { data: template, error: tErr } = await db
     .from("templates")
-    .select("id, front_pdf_path, back_pdf_path, logo_path")
+    .select(
+      "id, front_pdf_path, back_pdf_path, logo_path, is_from_scratch, design_elements, blank_page_size",
+    )
     .eq("id", args.templateId)
     .single();
   if (tErr || !template) throw new Error(`template not found: ${tErr?.message}`);
@@ -165,15 +167,61 @@ export async function generateCertificate(
     }
   }
 
-  // 7. Render
-  const frontPdf = await downloadTemplate(db, template.front_pdf_path);
-  const backPdf = template.back_pdf_path
-    ? await downloadTemplate(db, template.back_pdf_path)
+  // 7. Render. Two modes:
+  //   • FROM-SCRATCH: no front PDF — build a blank page (blank_page_size) and
+  //     draw the saved design_elements as the background.
+  //   • PDF TEMPLATE: download the front (and optional back) PDF as before.
+  const isFromScratch = Boolean(template.is_from_scratch) || !template.front_pdf_path;
+
+  let frontPdf: Uint8Array | undefined;
+  let backPdf: Uint8Array | undefined;
+  if (!isFromScratch) {
+    frontPdf = await downloadTemplate(db, template.front_pdf_path);
+    backPdf = template.back_pdf_path
+      ? await downloadTemplate(db, template.back_pdf_path)
+      : undefined;
+  }
+
+  // From-scratch artwork + page size (top-left origin, points).
+  const designElements = isFromScratch && Array.isArray(template.design_elements)
+    ? (template.design_elements as DesignElement[])
     : undefined;
+  const blankPage =
+    isFromScratch && template.blank_page_size
+      ? (template.blank_page_size as { width: number; height: number })
+      : undefined;
+
+  // Also fetch any custom fonts referenced by design-element text, not just
+  // placeholders, so from-scratch titles/body render in the chosen typeface.
+  if (designElements?.length) {
+    const deFamilies = Array.from(
+      new Set(
+        designElements
+          .filter((d): d is Extract<DesignElement, { kind: "text" }> => d.kind === "text")
+          .map((d) => d.fontFamily)
+          .filter((f) => f && !(f in customFonts)),
+      ),
+    );
+    if (deFamilies.length) {
+      const { data: fontRows } = await db
+        .from("fonts")
+        .select("family, file_path")
+        .in("family", deFamilies);
+      for (const f of fontRows ?? []) {
+        try {
+          customFonts[f.family] = await downloadTemplate(db, f.file_path);
+        } catch {
+          /* font optional — engine falls back to a standard font */
+        }
+      }
+    }
+  }
 
   const pdfBytes = await renderCertificate({
     frontPdf,
     backPdf,
+    blankPage,
+    designElements,
     placeholders,
     values,
     images,

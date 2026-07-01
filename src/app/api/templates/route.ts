@@ -54,8 +54,51 @@ export async function POST(req: NextRequest) {
     const name = String(form.get("name") ?? "").trim();
     const front = form.get("front");
     const back = form.get("back");
+    // FROM-SCRATCH mode: no PDF. The client sends fromScratch=true plus a page
+    // size (pageWidth/pageHeight in points). We create a template with no PDF
+    // paths; the designer draws artwork and the engine builds a blank page.
+    const fromScratch = String(form.get("fromScratch") ?? "") === "true";
 
     if (!name) return NextResponse.json({ error: "name is required" }, { status: 400 });
+
+    // --- FROM-SCRATCH branch -------------------------------------------------
+    if (fromScratch) {
+      const width = Math.round(Number(form.get("pageWidth")) || 842);
+      const height = Math.round(Number(form.get("pageHeight")) || 595);
+      if (width < 100 || width > 5000 || height < 100 || height > 5000) {
+        return NextResponse.json({ error: "invalid page size" }, { status: 400 });
+      }
+
+      const { data: tpl, error: insErr } = await db
+        .from("templates")
+        .insert({
+          org_id: ctx.orgId,
+          name,
+          front_pdf_path: null,
+          back_pdf_path: null,
+          page_width: width,
+          page_height: height,
+          is_from_scratch: true,
+          blank_page_size: { width, height },
+          design_elements: [],
+        })
+        .select("id")
+        .single();
+      if (insErr || !tpl) throw new Error(`create failed: ${insErr?.message}`);
+
+      await db.from("audit_logs").insert({
+        org_id: ctx.orgId,
+        actor_id: ctx.userId,
+        action: "template.create",
+        entity: "template",
+        entity_id: tpl.id,
+        metadata: { name, fromScratch: true },
+      });
+
+      return NextResponse.json({ id: tpl.id, pageWidth: width, pageHeight: height });
+    }
+
+    // --- PDF-UPLOAD branch (existing behaviour) ------------------------------
     if (!(front instanceof File)) {
       return NextResponse.json({ error: "front PDF is required" }, { status: 400 });
     }

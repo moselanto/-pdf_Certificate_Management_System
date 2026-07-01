@@ -2,14 +2,15 @@
 
 // Client wrapper around TemplateDesigner. Responsibilities:
 //   1. Rasterize the template's front PDF (and back PDF, if present) into PNG
-//      backdrops (pdf.js).
-//   2. Load any saved placeholders for this template.
-//   3. Persist placeholders via PUT /api/templates/[id]/placeholders.
+//      backdrops (pdf.js). FROM-SCRATCH templates have no PDF: we use a blank
+//      white canvas backdrop instead.
+//   2. Load any saved placeholders + design elements for this template.
+//   3. Persist both via PUT /api/templates/[id]/placeholders.
 
 import { useEffect, useState } from "react";
 import { TemplateDesigner } from "@/components/TemplateDesigner";
 import { rasterizeFirstPage } from "@/lib/pdf/rasterize";
-import type { Placeholder } from "@/lib/domain/types";
+import type { DesignElement, Placeholder } from "@/lib/domain/types";
 
 interface Props {
   templateId: string;
@@ -17,6 +18,19 @@ interface Props {
   backPdfUrl?: string;
   pageWidth: number;
   pageHeight: number;
+  // FROM-SCRATCH templates have no PDF; the designer uses a blank canvas.
+  isFromScratch?: boolean;
+}
+
+// A blank white page backdrop (SVG data URL) for from-scratch templates. The
+// editor stretches it to the page aspect, matching the printed blank page.
+function blankBackdrop(width: number, height: number) {
+  return (
+    "data:image/svg+xml;utf8," +
+    encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="#ffffff" stroke="#e5e7eb"/></svg>`,
+    )
+  );
 }
 
 export function TemplateDesignerClient({
@@ -25,8 +39,11 @@ export function TemplateDesignerClient({
   backPdfUrl,
   pageWidth,
   pageHeight,
+  isFromScratch = false,
 }: Props) {
-  const [pageImageUrl, setPageImageUrl] = useState<string | null>(null);
+  const [pageImageUrl, setPageImageUrl] = useState<string | null>(
+    isFromScratch ? blankBackdrop(pageWidth, pageHeight) : null,
+  );
   const [backImageUrl, setBackImageUrl] = useState<string | null>(null);
   // Back page can be a DIFFERENT size than the front. We capture its real
   // dimensions from the rasterizer so the editor scales the back canvas to the
@@ -34,10 +51,13 @@ export function TemplateDesignerClient({
   // the engine uses the back page's true height.
   const [backSize, setBackSize] = useState<{ width: number; height: number } | null>(null);
   const [placeholders, setPlaceholders] = useState<Placeholder[] | null>(null);
+  const [designElements, setDesignElements] = useState<DesignElement[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // Rasterize the front backdrop once.
+  // Rasterize the front backdrop once (PDF templates only). From-scratch
+  // templates keep the blank backdrop set in initial state.
   useEffect(() => {
+    if (isFromScratch) return;
     let cancelled = false;
     if (!frontPdfUrl) {
       setError("Could not load the template PDF.");
@@ -51,7 +71,7 @@ export function TemplateDesignerClient({
     return () => {
       cancelled = true;
     };
-  }, [frontPdfUrl]);
+  }, [frontPdfUrl, isFromScratch]);
 
   // Rasterize the back backdrop, if a back PDF exists. Best-effort: failure
   // just leaves the back canvas blank (the toggle still works). We also capture
@@ -81,23 +101,31 @@ export function TemplateDesignerClient({
     };
   }, [backPdfUrl]);
 
-  // Load saved placeholders.
+  // Load saved placeholders + design elements.
   useEffect(() => {
     let cancelled = false;
     fetch(`/api/templates/${templateId}/placeholders`)
       .then((r) => r.json())
-      .then((j) => !cancelled && setPlaceholders(j.placeholders ?? []))
-      .catch(() => !cancelled && setPlaceholders([]));
+      .then((j) => {
+        if (cancelled) return;
+        setPlaceholders(j.placeholders ?? []);
+        setDesignElements(Array.isArray(j.designElements) ? j.designElements : []);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setPlaceholders([]);
+        setDesignElements([]);
+      });
     return () => {
       cancelled = true;
     };
   }, [templateId]);
 
-  const save = async (next: Placeholder[]) => {
+  const save = async (nextPlaceholders: Placeholder[], nextDesign: DesignElement[]) => {
     const res = await fetch(`/api/templates/${templateId}/placeholders`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ placeholders: next }),
+      body: JSON.stringify({ placeholders: nextPlaceholders, designElements: nextDesign }),
     });
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
@@ -129,6 +157,7 @@ export function TemplateDesignerClient({
       backPageWidth={backSize?.width}
       backPageHeight={backSize?.height}
       initialPlaceholders={placeholders}
+      initialDesignElements={designElements}
       onSave={save}
     />
   );

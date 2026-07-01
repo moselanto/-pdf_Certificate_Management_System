@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { placeholderSchema } from "@/lib/domain/schemas";
+import { placeholderSchema, designElementSchema } from "@/lib/domain/schemas";
 import { z } from "zod";
 
 export const runtime = "nodejs";
@@ -49,10 +49,23 @@ export async function GET(
     qrLight: r.qr_light == null ? undefined : String(r.qr_light),
     qrTransparent: r.qr_transparent == null ? undefined : Boolean(r.qr_transparent),
   }));
-  return NextResponse.json({ placeholders });
+
+  // Design elements (from-scratch artwork) live as JSONB on the template.
+  const { data: tpl } = await db
+    .from("templates")
+    .select("design_elements")
+    .eq("id", params.id)
+    .single();
+  const designElements = Array.isArray(tpl?.design_elements) ? tpl!.design_elements : [];
+
+  return NextResponse.json({ placeholders, designElements });
 }
 
-const putSchema = z.object({ placeholders: z.array(placeholderSchema) });
+const putSchema = z.object({
+  placeholders: z.array(placeholderSchema),
+  // Optional so existing PDF-template saves (placeholders only) keep working.
+  designElements: z.array(designElementSchema).optional(),
+});
 
 export async function PUT(
   req: NextRequest,
@@ -66,7 +79,18 @@ export async function PUT(
   }
 
   try {
-    const { placeholders } = putSchema.parse(await req.json());
+    const { placeholders, designElements } = putSchema.parse(await req.json());
+
+    // Persist design elements (from-scratch artwork) as JSONB on the template.
+    // Only write when the client sent them, so PDF-template saves that omit the
+    // field don't wipe any existing artwork.
+    if (designElements !== undefined) {
+      const { error: deErr } = await db
+        .from("templates")
+        .update({ design_elements: designElements })
+        .eq("id", params.id);
+      if (deErr) throw new Error(deErr.message);
+    }
 
     // Replace set: clear then insert.
     const { error: delErr } = await db

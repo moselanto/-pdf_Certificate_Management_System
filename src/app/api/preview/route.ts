@@ -40,17 +40,30 @@ export async function POST(req: NextRequest) {
 
     const { data: template, error } = await db
       .from("templates")
-      .select("front_pdf_path, back_pdf_path, logo_path")
+      .select(
+        "front_pdf_path, back_pdf_path, logo_path, is_from_scratch, design_elements, blank_page_size",
+      )
       .eq("id", body.templateId)
       .single();
     if (error || !template) {
       return NextResponse.json({ error: "template not found" }, { status: 404 });
     }
 
-    const frontPdf = await downloadTemplate(db, template.front_pdf_path);
-    const backPdf = template.back_pdf_path
-      ? await downloadTemplate(db, template.back_pdf_path)
-      : undefined;
+    // FROM-SCRATCH templates have no PDF: render a blank page + design elements.
+    const isFromScratch = Boolean(template.is_from_scratch) || !template.front_pdf_path;
+    const frontPdf = isFromScratch
+      ? undefined
+      : await downloadTemplate(db, template.front_pdf_path);
+    const backPdf =
+      !isFromScratch && template.back_pdf_path
+        ? await downloadTemplate(db, template.back_pdf_path)
+        : undefined;
+    const designElements =
+      isFromScratch && Array.isArray(template.design_elements)
+        ? template.design_elements
+        : undefined;
+    const blankPage =
+      isFromScratch && template.blank_page_size ? template.blank_page_size : undefined;
 
     // Render the QR using the QR placeholder's configured colors so the preview
     // reflects custom QR appearance (e.g. white-on-transparent for dark themes).
@@ -83,6 +96,8 @@ export async function POST(req: NextRequest) {
     const pdfBytes = await renderCertificate({
       frontPdf,
       backPdf,
+      blankPage,
+      designElements,
       placeholders: body.placeholders.map((p) => ({
         ...p,
         id: p.id ?? Math.random().toString(36),

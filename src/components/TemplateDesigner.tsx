@@ -15,12 +15,21 @@
 // ============================================================================
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Placeholder, PlaceholderKind, PlaceholderPage } from "@/lib/domain/types";
+import type {
+  DesignElement,
+  Placeholder,
+  PlaceholderKind,
+  PlaceholderPage,
+} from "@/lib/domain/types";
 import { PlaceholderEditor } from "./PlaceholderEditor";
 import { FieldInspector } from "./FieldInspector";
+import { DesignElementLayer, type DrawTool } from "./DesignElementLayer";
+import { DesignInspector } from "./DesignInspector";
 
 let idCounter = 0;
 const newId = () => `ph_${Date.now()}_${idCounter++}`;
+let deCounter = 0;
+const newDeId = () => `de_${Date.now()}_${deCounter++}`;
 
 interface Props {
   templateId: string;
@@ -34,7 +43,9 @@ interface Props {
   backPageWidth?: number;
   backPageHeight?: number;
   initialPlaceholders?: Placeholder[];
-  onSave: (placeholders: Placeholder[]) => Promise<void>;
+  // Static design elements (from-scratch drawing mode). Optional; defaults [].
+  initialDesignElements?: DesignElement[];
+  onSave: (placeholders: Placeholder[], designElements: DesignElement[]) => Promise<void>;
 }
 
 const FIELD_PRESETS: Array<{ kind: PlaceholderKind; label: string; fieldKey: string }> = [
@@ -61,6 +72,7 @@ export function TemplateDesigner({
   backPageWidth,
   backPageHeight,
   initialPlaceholders = [],
+  initialDesignElements = [],
   onSave,
 }: Props) {
   const [placeholders, setPlaceholders] = useState<Placeholder[]>(initialPlaceholders);
@@ -70,6 +82,35 @@ export function TemplateDesigner({
   const [previewName, setPreviewName] = useState("Jane W. Mwangi");
   const [saving, setSaving] = useState(false);
   const [previewing, setPreviewing] = useState(false);
+
+  // --- Drawing mode (from-scratch design elements) -------------------------
+  // "fields" = the classic placeholder editor; "draw" = draw static artwork
+  // (text/line/rect) on the same canvas. Both save together.
+  const [mode, setMode] = useState<"fields" | "draw">("fields");
+  const [designElements, setDesignElements] = useState<DesignElement[]>(
+    initialDesignElements,
+  );
+  const [selectedDeId, setSelectedDeId] = useState<string | undefined>();
+  const [drawTool, setDrawTool] = useState<DrawTool>("select");
+  // Custom font family names for the font picker (standard fonts are added in
+  // the inspector). Loaded from /api/fonts.
+  const [customFonts, setCustomFonts] = useState<string[]>([]);
+
+  // Load the org's custom fonts once (for the design text font picker).
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/fonts")
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled) return;
+        const fams = (j.fonts ?? []).map((f: { family: string }) => f.family);
+        setCustomFonts(fams);
+      })
+      .catch(() => !cancelled && setCustomFonts([]));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // --- Logo upload state ---------------------------------------------------
   // The template carries ONE logo image; the "Logo" field (an image placeholder
@@ -207,10 +248,53 @@ export function TemplateDesigner({
   const save = async () => {
     setSaving(true);
     try {
-      await onSave(placeholders);
+      await onSave(placeholders, designElements);
     } finally {
       setSaving(false);
     }
+  };
+
+  // --- Design-element helpers (drawing mode) -------------------------------
+  // Only the active page's elements are shown/edited on the canvas; the other
+  // page's elements are preserved on change/save.
+  const visibleDesignElements = useMemo(
+    () => designElements.filter((d) => (d.page ?? "front") === activePage),
+    [designElements, activePage],
+  );
+
+  const mergeVisibleDesign = (updatedVisible: DesignElement[]) => {
+    setDesignElements((prev) => {
+      const others = prev.filter((d) => (d.page ?? "front") !== activePage);
+      return [...others, ...updatedVisible];
+    });
+  };
+
+  const createDesignElement = (el: DesignElement) => {
+    // Stamp it onto the active page and give it a stable id.
+    const stamped = { ...el, id: newDeId(), page: activePage } as DesignElement;
+    setDesignElements((prev) => [...prev, stamped]);
+    setSelectedDeId(stamped.id);
+  };
+
+  const selectedDesign = useMemo(
+    () => designElements.find((d) => d.id === selectedDeId),
+    [designElements, selectedDeId],
+  );
+
+  const updateDesignElement = (next: DesignElement) =>
+    setDesignElements((prev) => prev.map((d) => (d.id === next.id ? next : d)));
+
+  const deleteDesignElement = (id: string) => {
+    setDesignElements((prev) => prev.filter((d) => d.id !== id));
+    setSelectedDeId(undefined);
+  };
+
+  const duplicateDesignElement = (id: string) => {
+    const src = designElements.find((d) => d.id === id);
+    if (!src) return;
+    const copy = { ...src, id: newDeId(), x: src.x + 12, y: src.y + 12 } as DesignElement;
+    setDesignElements((prev) => [...prev, copy]);
+    setSelectedDeId(copy.id);
   };
 
   const livePreview = async () => {
@@ -251,9 +335,40 @@ export function TemplateDesigner({
   const countOn = (page: PlaceholderPage) =>
     placeholders.filter((p) => (p.page ?? "front") === page).length;
 
+  const modeClass = (m: "fields" | "draw") =>
+    [
+      "rounded-lg px-4 py-1.5 text-sm font-semibold",
+      mode === m
+        ? "bg-gray-900 text-white"
+        : "border border-gray-300 text-gray-600 hover:bg-gray-50",
+    ].join(" ");
+
+  const drawToolClass = (t: DrawTool) =>
+    [
+      "rounded-full px-3 py-1 text-sm font-medium",
+      drawTool === t
+        ? "bg-brand-600 text-white"
+        : "border border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100",
+    ].join(" ");
+
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
       <div className="space-y-4">
+        {/* Mode toggle: place dynamic fields vs. draw static artwork */}
+        <div className="flex items-center gap-2 border-b border-gray-100 pb-3">
+          <button onClick={() => setMode("fields")} className={modeClass("fields")}>
+            Place fields
+          </button>
+          <button onClick={() => setMode("draw")} className={modeClass("draw")}>
+            Draw / from scratch
+          </button>
+          <span className="ml-1 text-xs text-gray-400">
+            {mode === "fields"
+              ? "Add dynamic fields (name, date, QR) that fill per recipient."
+              : "Draw static text, lines, and boxes directly on the page."}
+          </span>
+        </div>
+
         {/* Front / Back page toggle */}
         <div className="flex items-center gap-2">
           <button onClick={() => setActivePage("front")} className={tabClass("front")}>
@@ -271,18 +386,43 @@ export function TemplateDesigner({
           )}
         </div>
 
-        {/* Toolbar */}
-        <div className="flex flex-wrap gap-2">
-          {FIELD_PRESETS.map((preset) => (
-            <button
-              key={preset.fieldKey}
-              onClick={() => addField(preset)}
-              className="rounded-full border border-brand-200 bg-brand-50 px-3 py-1 text-sm font-medium text-brand-700 hover:bg-brand-100"
-            >
-              + {preset.label}
+        {/* Toolbar — dynamic fields (fields mode) OR draw tools (draw mode) */}
+        {mode === "fields" ? (
+          <div className="flex flex-wrap gap-2">
+            {FIELD_PRESETS.map((preset) => (
+              <button
+                key={preset.fieldKey}
+                onClick={() => addField(preset)}
+                className="rounded-full border border-brand-200 bg-brand-50 px-3 py-1 text-sm font-medium text-brand-700 hover:bg-brand-100"
+              >
+                + {preset.label}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold uppercase text-gray-400">Tools:</span>
+            <button onClick={() => setDrawTool("select")} className={drawToolClass("select")}>
+              Select / move
             </button>
-          ))}
-        </div>
+            <button onClick={() => setDrawTool("text")} className={drawToolClass("text")}>
+              + Text
+            </button>
+            <button onClick={() => setDrawTool("line")} className={drawToolClass("line")}>
+              + Line
+            </button>
+            <button onClick={() => setDrawTool("rect")} className={drawToolClass("rect")}>
+              + Rectangle
+            </button>
+            <span className="ml-1 text-xs text-gray-400">
+              {drawTool === "select"
+                ? "Click an element to select; drag to move."
+                : drawTool === "text"
+                  ? "Click on the page to drop text."
+                  : `Press and drag on the page to draw a ${drawTool}.`}
+            </span>
+          </div>
+        )}
 
         {/* Logo upload control */}
         <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-4">
@@ -357,6 +497,24 @@ export function TemplateDesigner({
           }}
           selectedId={selectedId}
           onSelect={setSelectedId}
+          // In draw mode, the design-element layer captures pointer events so
+          // you can draw/select/move artwork. In fields mode it's display-only
+          // (so drawn elements still show behind the field chips for context).
+          overlayCaptures={mode === "draw"}
+          renderOverlay={(scale) => (
+            <DesignElementLayer
+              scale={scale}
+              pageWidth={activeWidth}
+              pageHeight={activeHeight}
+              elements={visibleDesignElements}
+              tool={mode === "draw" ? drawTool : "select"}
+              selectedId={mode === "draw" ? selectedDeId : undefined}
+              onSelect={setSelectedDeId}
+              onChange={mergeVisibleDesign}
+              onCreate={createDesignElement}
+              onToolConsumed={() => setDrawTool("select")}
+            />
+          )}
         />
 
         <div className="flex flex-wrap items-end gap-3">
@@ -406,17 +564,32 @@ export function TemplateDesigner({
       </div>
 
       <div>
-        <h3 className="mb-2 text-sm font-semibold text-gray-700">Field properties</h3>
-        <FieldInspector
-          placeholder={selected}
-          onChange={(next) =>
-            setPlaceholders((prev) => prev.map((p) => (p.id === next.id ? next : p)))
-          }
-          onDelete={(id) => {
-            setPlaceholders((prev) => prev.filter((p) => p.id !== id));
-            setSelectedId(undefined);
-          }}
-        />
+        {mode === "fields" ? (
+          <>
+            <h3 className="mb-2 text-sm font-semibold text-gray-700">Field properties</h3>
+            <FieldInspector
+              placeholder={selected}
+              onChange={(next) =>
+                setPlaceholders((prev) => prev.map((p) => (p.id === next.id ? next : p)))
+              }
+              onDelete={(id) => {
+                setPlaceholders((prev) => prev.filter((p) => p.id !== id));
+                setSelectedId(undefined);
+              }}
+            />
+          </>
+        ) : (
+          <>
+            <h3 className="mb-2 text-sm font-semibold text-gray-700">Element properties</h3>
+            <DesignInspector
+              element={selectedDesign}
+              customFonts={customFonts}
+              onChange={updateDesignElement}
+              onDelete={deleteDesignElement}
+              onDuplicate={duplicateDesignElement}
+            />
+          </>
+        )}
       </div>
     </div>
   );

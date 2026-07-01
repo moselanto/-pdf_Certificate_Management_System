@@ -23,6 +23,14 @@ interface Props {
   onChange: (next: Placeholder[]) => void;
   selectedId?: string;
   onSelect?: (id: string) => void;
+  // Optional overlay rendered inside the stage, on top of the backdrop but
+  // aligned to the SAME scale. Used by the "from scratch" drawing mode to draw
+  // design elements (text/line/rect) on the same canvas. Receives the computed
+  // px-per-point scale so it maps 1:1 with placeholders.
+  renderOverlay?: (scale: number) => React.ReactNode;
+  // When true, placeholder chips ignore pointer events so the overlay (drawing
+  // layer) can receive clicks/drags. Placeholders still render for reference.
+  overlayCaptures?: boolean;
 }
 
 export function PlaceholderEditor({
@@ -33,6 +41,8 @@ export function PlaceholderEditor({
   onChange,
   selectedId,
   onSelect,
+  renderOverlay,
+  overlayCaptures = false,
 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -211,6 +221,18 @@ export function PlaceholderEditor({
               </div>
             );
           })}
+
+          {/* Optional design-element overlay (from-scratch drawing mode). It
+              receives the same scale so its elements map 1:1 with placeholders.
+              When it captures pointer events, it sits above the chips. */}
+          {renderOverlay && scale > 0 && (
+            <div
+              className="absolute inset-0"
+              style={{ pointerEvents: overlayCaptures ? "auto" : "none" }}
+            >
+              {renderOverlay(scale)}
+            </div>
+          )}
         </div>
       </div>
 

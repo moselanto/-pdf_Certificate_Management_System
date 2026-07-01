@@ -12,6 +12,7 @@ import { downloadTemplate, uploadCertificate } from "@/lib/supabase/storage";
 import { computeIntegrityHash, INTEGRITY_ALG } from "@/lib/pdf/integrity";
 import type { Placeholder, CourseUnit, DesignElement } from "@/lib/domain/types";
 import { loadBundledFonts } from "@/lib/fonts/bundledFontsServer";
+import { seedStaticTextValues } from "./fieldValues";
 
 /**
  * Merge bundled free fonts into a family->bytes map. Org-uploaded fonts already
@@ -114,27 +115,23 @@ export async function generateCertificate(
     light: qrPh?.qrTransparent ? "#00000000" : qrPh?.qrLight,
   });
 
-  // 5. Assemble field values
+  // 5. Assemble field values.
   //
-  // Static text fields (e.g. Certificate Title, or any custom text label the
-  // designer typed) carry their printed text in the placeholder's `label`.
-  // Text placeholders render via values[fieldKey], so we seed a value from the
-  // label for every text field first. This mirrors the live preview, which
-  // does exactly the same (sample[p.fieldKey] = p.label), so a Certificate
-  // Title that shows in preview now also prints on the generated PDF.
+  // Static text placeholders (e.g. a "certificate_title" field printing the
+  // same wording on every certificate — "OF MOVING AND HANDLING") carry their
+  // printed text in the placeholder's `label`. The engine only draws text via
+  // values[fieldKey], so seedStaticTextValues() seeds each STATIC text field's
+  // value from its label — mirroring the live preview, which does the same
+  // (sample[p.fieldKey] = p.label). Without it a Certificate Title shows in the
+  // preview but is missing on the generated PDF.
   //
-  // The dynamic per-recipient fields below (recipient_name, issue_date,
-  // certificate_number, trainer_name) then override their own keys, and any
-  // explicit args.values override everything last.
-  const textFieldDefaults: Record<string, string> = {};
-  for (const p of placeholders) {
-    if (p.kind === "text" && p.fieldKey && p.label) {
-      textFieldDefaults[p.fieldKey] = p.label;
-    }
-  }
-
+  // It deliberately SKIPS the dynamic per-recipient keys (recipient_name,
+  // issue_date, certificate_number, trainer_name) so those stay blank when no
+  // value is supplied, instead of printing their label — e.g. the literal words
+  // "Trainer Name" on a certificate generated without a trainer selected. The
+  // real values below override their own keys, and args.values overrides last.
   const values: Record<string, string> = {
-    ...textFieldDefaults,
+    ...seedStaticTextValues(placeholders),
     recipient_name: args.recipientName,
     issue_date: new Date(args.issueDate).toLocaleDateString("en-GB", {
       day: "2-digit",

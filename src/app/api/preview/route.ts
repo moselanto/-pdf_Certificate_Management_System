@@ -15,6 +15,7 @@ import { qrPng, verificationUrl } from "@/lib/qr/qr";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { downloadTemplate } from "@/lib/supabase/storage";
 import { placeholderSchema } from "@/lib/domain/schemas";
+import { loadBundledFonts } from "@/lib/fonts/bundledFontsServer";
 import { z } from "zod";
 
 export const runtime = "nodejs";
@@ -97,6 +98,12 @@ export async function POST(req: NextRequest) {
     );
     const units = hasCourseList || backPdf ? SAMPLE_UNITS : undefined;
 
+    // Bundled free fonts are always available in the preview so drawn/dynamic
+    // text renders in the chosen typeface without any upload. (Org-uploaded
+    // custom fonts are resolved at generation time; the live preview uses the
+    // bundled set + standard fonts.)
+    const customFonts = await loadBundledFonts();
+
     const pdfBytes = await renderCertificate({
       frontPdf,
       backPdf,
@@ -109,6 +116,7 @@ export async function POST(req: NextRequest) {
       values: body.values,
       images,
       units,
+      customFonts,
     });
 
     return new NextResponse(Buffer.from(pdfBytes), {

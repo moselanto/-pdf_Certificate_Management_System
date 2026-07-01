@@ -17,6 +17,7 @@ import type {
   DesignTextElement,
   TextAlign,
 } from "@/lib/domain/types";
+import { BUNDLED_FONT_FAMILIES } from "@/lib/fonts/bundledFonts";
 
 const STANDARD_FONTS = [
   "Helvetica",
@@ -50,7 +51,12 @@ export function DesignInspector({
     );
   }
 
-  const fontOptions = [...STANDARD_FONTS, ...customFonts];
+  // Font picker = standard PDF fonts + bundled free fonts (always available) +
+  // any org-uploaded custom fonts. De-dupe so an uploaded font that shares a
+  // bundled name isn't listed twice.
+  const fontOptions = Array.from(
+    new Set([...STANDARD_FONTS, ...BUNDLED_FONT_FAMILIES, ...customFonts]),
+  );
 
   const num = (v: string, fallback = 0) => {
     const n = parseFloat(v);

@@ -11,6 +11,20 @@ import { generateCertificateNumber } from "@/lib/pdf/certificateNumber";
 import { downloadTemplate, uploadCertificate } from "@/lib/supabase/storage";
 import { computeIntegrityHash, INTEGRITY_ALG } from "@/lib/pdf/integrity";
 import type { Placeholder, CourseUnit, DesignElement } from "@/lib/domain/types";
+import { loadBundledFonts } from "@/lib/fonts/bundledFontsServer";
+
+/**
+ * Merge bundled free fonts into a family->bytes map. Org-uploaded fonts already
+ * present in `customFonts` take precedence (an uploaded file overrides a
+ * bundled font of the same family), so we only add bundled fonts for families
+ * not already resolved.
+ */
+async function withBundledFonts(
+  customFonts: Record<string, Uint8Array>,
+): Promise<Record<string, Uint8Array>> {
+  const bundled = await loadBundledFonts();
+  return { ...bundled, ...customFonts };
+}
 
 export interface GenerateArgs {
   orgId: string;
@@ -229,7 +243,7 @@ export async function generateCertificate(
     images,
     units,
     unitsLayout: { x: 72, y: 220, fontSize: 12, lineGap: 8 },
-    customFonts,
+    customFonts: await withBundledFonts(customFonts),
   });
 
   // 7b. Content-integrity hash: bind the rendered PDF bytes to the certificate's

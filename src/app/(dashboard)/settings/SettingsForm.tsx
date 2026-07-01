@@ -111,6 +111,39 @@ export function SettingsForm({
     }
   };
 
+  // Bulk upload: several .ttf/.otf files at once. The family name is derived
+  // from each file name server-side; the user can rename individually later by
+  // re-uploading. Reports how many succeeded / failed.
+  const bulkFontRef = useRef<HTMLInputElement>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkResult, setBulkResult] = useState<string | null>(null);
+
+  const uploadFontsBulk = async (files: FileList) => {
+    setFontError(null);
+    setBulkResult(null);
+    setBulkBusy(true);
+    try {
+      const fd = new FormData();
+      Array.from(files).forEach((f) => fd.append("fonts", f));
+      const res = await fetch("/api/fonts", { method: "POST", body: fd });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "Bulk upload failed");
+      const uploaded: string[] = json.uploaded ?? [];
+      const failed: { file: string; error: string }[] = json.failed ?? [];
+      let msg = `Added ${uploaded.length} font${uploaded.length === 1 ? "" : "s"}.`;
+      if (failed.length) {
+        msg += ` ${failed.length} skipped: ${failed.map((f) => f.file).join(", ")}.`;
+      }
+      setBulkResult(msg);
+      await loadFonts();
+    } catch (err) {
+      setFontError((err as Error).message);
+    } finally {
+      setBulkBusy(false);
+      if (bulkFontRef.current) bulkFontRef.current.value = "";
+    }
+  };
+
   const removeFont = async (id: string) => {
     setFontError(null);
     setFontBusy(true);
@@ -241,12 +274,15 @@ export function SettingsForm({
       <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-6">
         <h3 className="text-sm font-semibold text-gray-900">Custom fonts</h3>
         <p className="text-xs text-gray-500">
-          Build your font library here. Upload a TrueType (.ttf) or OpenType
-          (.otf) file for each font you want (e.g. Myriad Pro, Akrobat,
-          Architext, Edwardian Script ITC). Once uploaded, a font appears in the
-          Font picker in the template designer — for both dynamic fields and the
-          Draw / from-scratch text tool. The engine falls back to a standard
-          font if one is missing. Each file must be under 2&nbsp;MB.
+          CertForge already ships a library of ready-to-use fonts (elegant
+          scripts like Great Vibes and Alex Brush, classic serifs like Playfair
+          Display and EB Garamond, and clean sans-serifs like Montserrat and
+          Poppins) — these appear automatically in the Font picker with nothing
+          to upload. Use this section to add your own extra fonts (e.g. Myriad
+          Pro, Akrobat, Architext, Edwardian Script ITC). Once uploaded, a font
+          appears in the Font picker in the template designer — for both dynamic
+          fields and the Draw / from-scratch text tool. The engine falls back to
+          a standard font if one is missing. Each file must be under 2&nbsp;MB.
         </p>
         <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
           Only upload fonts you are licensed to use. Commercial typefaces such
@@ -274,6 +310,38 @@ export function SettingsForm({
           <p className="text-xs text-gray-400">No custom fonts yet.</p>
         )}
 
+        {/* Bulk upload — add several fonts at once (family name derived from
+            each file name). Fast path when adding a whole family library. */}
+        {canEdit && (
+          <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-3">
+            <label className="block text-xs font-semibold text-gray-700">
+              Add several fonts at once
+            </label>
+            <p className="mb-2 mt-0.5 text-xs text-gray-500">
+              Select multiple .ttf / .otf files. We&apos;ll name each font from
+              its file name (e.g. &ldquo;MyriadPro-Regular.ttf&rdquo; &rarr;
+              &ldquo;Myriad Pro&rdquo;). Use the single upload below if you want
+              to set an exact name.
+            </p>
+            <input
+              ref={bulkFontRef}
+              type="file"
+              multiple
+              accept=".ttf,.otf,font/ttf,font/otf"
+              disabled={bulkBusy}
+              onChange={(e) => {
+                const files = e.target.files;
+                if (files && files.length) uploadFontsBulk(files);
+              }}
+              className="text-xs text-gray-600 file:mr-2 file:rounded-md file:border-0 file:bg-brand-600 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-brand-700"
+            />
+            {bulkBusy && <p className="mt-2 text-xs text-gray-500">Uploading…</p>}
+            {bulkResult && (
+              <p className="mt-2 text-xs font-medium text-green-700">{bulkResult}</p>
+            )}
+          </div>
+        )}
+
         <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
           <div>
             <label className="block text-xs font-semibold text-gray-700">Font name</label>
@@ -281,7 +349,7 @@ export function SettingsForm({
               value={fontFamily}
               onChange={(e) => setFontFamily(e.target.value)}
               placeholder="e.g. Great Vibes"
-              className="mt-1 w-full rounded-lg border-gray-300 text-sm"
+              className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
             />
           </div>
           <input
@@ -297,7 +365,7 @@ export function SettingsForm({
           disabled={fontBusy}
           className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
         >
-          {fontBusy ? "Working…" : "Upload font"}
+          {fontBusy ? "Working…" : "Upload one font"}
         </button>
         {fontError && (
           <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{fontError}</div>

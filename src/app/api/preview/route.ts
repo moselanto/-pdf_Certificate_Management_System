@@ -10,6 +10,8 @@
 // field previews exactly as it will on the generated certificate.
 
 import { NextRequest, NextResponse } from "next/server";
+import { promises as fs } from "fs";
+import path from "path";
 import { renderCertificate } from "@/lib/pdf/overlay";
 import { qrPng, verificationUrl } from "@/lib/qr/qr";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -24,7 +26,25 @@ const bodySchema = z.object({
   templateId: z.string().uuid(),
   placeholders: z.array(placeholderSchema),
   values: z.record(z.string()).default({}),
+  // Optional trainer to preview with. When set and that trainer has an
+  // uploaded signature, the preview injects their REAL signature image so a
+  // Trainer Signature field previews exactly as it will print. When omitted (or
+  // the trainer has no signature on file), we inject a bundled SAMPLE signature
+  // image instead so the field still previews as an image, not typed text.
+  trainerId: z.string().uuid().optional(),
 });
+
+/** Load the bundled sample signature PNG shipped in public/samples. */
+async function loadSampleSignature(): Promise<Uint8Array | undefined> {
+  try {
+    const buf = await fs.readFile(
+      path.join(process.cwd(), "public", "samples", "sample-signature.png"),
+    );
+    return new Uint8Array(buf);
+  } catch {
+    return undefined;
+  }
+}
 
 const SAMPLE_UNITS = [
   "Use of full body hoist",
@@ -87,6 +107,43 @@ export async function POST(req: NextRequest) {
         images.logo = await downloadTemplate(db, template.logo_path);
       } catch {
         /* logo optional — ignore if it can't be fetched */
+      }
+    }
+
+    // Signature fields: preview as an IMAGE, matching a real certificate.
+    // A signature placeholder renders the uploaded image when image bytes are
+    // present, and only falls back to typed text when none exist. So for the
+    // preview to look right we must inject a signature image for each signature
+    // field. Resolution per field:
+    //   1. If a trainer is selected (body.trainerId) and has a signature on
+    //      file, use their REAL uploaded signature.
+    //   2. Otherwise inject the bundled SAMPLE signature so the box still
+    //      previews as an image (not typed text).
+    const sigFields = body.placeholders.filter(
+      (p) => p.kind === "signature" && p.fieldKey !== "logo",
+    );
+    if (sigFields.length) {
+      let trainerSig: Uint8Array | undefined;
+      if (body.trainerId) {
+        const { data: trainer } = await db
+          .from("trainers")
+          .select("signature_path")
+          .eq("id", body.trainerId)
+          .single();
+        if (trainer?.signature_path) {
+          try {
+            trainerSig = await downloadTemplate(db, trainer.signature_path);
+          } catch {
+            /* fall back to the sample below */
+          }
+        }
+      }
+      const sampleSig = trainerSig ? undefined : await loadSampleSignature();
+      const sig = trainerSig ?? sampleSig;
+      if (sig) {
+        for (const p of sigFields) {
+          if (!images[p.fieldKey]) images[p.fieldKey] = sig;
+        }
       }
     }
 

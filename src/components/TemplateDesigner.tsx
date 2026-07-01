@@ -82,6 +82,13 @@ export function TemplateDesigner({
   const [previewName, setPreviewName] = useState("Jane W. Mwangi");
   const [saving, setSaving] = useState(false);
   const [previewing, setPreviewing] = useState(false);
+  // Preview trainer: when a signature field is placed, you can pick a trainer
+  // to preview with. If they have an uploaded signature, the preview shows
+  // their REAL signature image; otherwise a sample signature image is shown.
+  const [trainers, setTrainers] = useState<
+    { id: string; name: string; signature_path: string | null }[]
+  >([]);
+  const [previewTrainerId, setPreviewTrainerId] = useState<string>("");
 
   // --- Drawing mode (from-scratch design elements) -------------------------
   // "fields" = the classic placeholder editor; "draw" = draw static artwork
@@ -107,6 +114,21 @@ export function TemplateDesigner({
         setCustomFonts(fams);
       })
       .catch(() => !cancelled && setCustomFonts([]));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Load trainers once (for the preview signature picker).
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/trainers")
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled) return;
+        setTrainers(j.trainers ?? []);
+      })
+      .catch(() => !cancelled && setTrainers([]));
     return () => {
       cancelled = true;
     };
@@ -169,6 +191,13 @@ export function TemplateDesigner({
       setLogoBusy(false);
     }
   };
+
+  // True once the user has added a signature placeholder (e.g. Trainer
+  // Signature) to either page — used to show the preview signature picker.
+  const hasSignatureField = useMemo(
+    () => placeholders.some((p) => p.kind === "signature" && p.fieldKey !== "logo"),
+    [placeholders],
+  );
 
   // True once the user has added a "logo" placeholder to either page.
   const hasLogoField = useMemo(
@@ -312,7 +341,12 @@ export function TemplateDesigner({
       const res = await fetch("/api/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ templateId, placeholders, values: sample }),
+        body: JSON.stringify({
+          templateId,
+          placeholders,
+          values: sample,
+          ...(previewTrainerId ? { trainerId: previewTrainerId } : {}),
+        }),
       });
       if (!res.ok) throw new Error(await res.text());
       const blob = await res.blob();
@@ -534,9 +568,33 @@ export function TemplateDesigner({
               value={previewName}
               onChange={(e) => setPreviewName(e.target.value)}
               placeholder="Type a name to preview"
-              className="mt-1 w-56 rounded-lg border-gray-300 text-sm"
+              className="mt-1 w-56 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
             />
           </div>
+
+          {/* Preview trainer — only relevant when a signature field is placed.
+              Pick a trainer to preview their real uploaded signature; leave on
+              "Sample signature" to preview with a placeholder signature image. */}
+          {hasSignatureField && (
+            <div>
+              <label className="block text-xs font-medium text-gray-500">
+                Preview signature
+              </label>
+              <select
+                value={previewTrainerId}
+                onChange={(e) => setPreviewTrainerId(e.target.value)}
+                className="mt-1 w-56 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              >
+                <option value="">Sample signature</option>
+                {trainers.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                    {t.signature_path ? "" : " (no signature on file)"}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <button
             onClick={livePreview}
@@ -546,6 +604,16 @@ export function TemplateDesigner({
             {previewing ? "Rendering…" : "Live preview"}
           </button>
         </div>
+
+        {hasSignatureField && (
+          <p className="text-xs text-gray-500">
+            Your Trainer Signature field prints the selected trainer&apos;s
+            uploaded signature image. In this preview, pick a trainer to see
+            their real signature, or leave it on &ldquo;Sample signature&rdquo;
+            to check placement. Upload a trainer&apos;s signature on the Trainers
+            screen.
+          </p>
+        )}
 
         <p className="text-xs text-gray-500">
           Editing the <span className="font-semibold">{activePage}</span> page.

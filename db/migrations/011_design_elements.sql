@@ -7,8 +7,7 @@
 -- (recipient name, course, date, QR) still render on top of these elements.
 --
 -- Design goals:
---   * Keep the existing PDF-upload flow fully intact (front_pdf_path stays
---     nullable-compatible; existing rows are untouched).
+--   * Keep the existing PDF-upload flow fully intact.
 --   * Store the design as JSONB on the template so the engine can render it
 --     without a background PDF.
 --   * Record the blank page size so the editor and engine agree on dimensions.
@@ -17,6 +16,12 @@
 -- editor); the render engine converts to pdf-lib's bottom-left origin.
 --
 -- Run this in the Supabase SQL Editor AFTER migrations 001-010.
+
+-- Allow templates with NO front PDF (from-scratch templates). The original
+-- schema declared front_pdf_path NOT NULL; a from-scratch template has no PDF,
+-- so we relax the constraint. Existing PDF templates keep their paths.
+alter table public.templates
+  alter column front_pdf_path drop not null;
 
 -- Mark whether a template is built from scratch vs. from an uploaded PDF.
 alter table public.templates

@@ -25,6 +25,10 @@ import { PlaceholderEditor } from "./PlaceholderEditor";
 import { FieldInspector } from "./FieldInspector";
 import { DesignElementLayer, type DrawTool } from "./DesignElementLayer";
 import { DesignInspector } from "./DesignInspector";
+import {
+  ensureBundledFontFaces,
+  loadCustomFontFaces,
+} from "@/lib/fonts/loadFontsBrowser";
 
 let idCounter = 0;
 const newId = () => `ph_${Date.now()}_${idCounter++}`;
@@ -103,15 +107,26 @@ export function TemplateDesigner({
   // the inspector). Loaded from /api/fonts.
   const [customFonts, setCustomFonts] = useState<string[]>([]);
 
-  // Load the org's custom fonts once (for the design text font picker).
+  // Register @font-face rules for the bundled fonts once, so the canvas can
+  // render field/design text in the chosen font immediately (not only after a
+  // preview).
+  useEffect(() => {
+    ensureBundledFontFaces();
+  }, []);
+
+  // Load the org's custom fonts once (for the design text font picker) AND
+  // load their font faces into the browser so custom-font text also previews
+  // live on the canvas.
   useEffect(() => {
     let cancelled = false;
     fetch("/api/fonts")
       .then((r) => r.json())
       .then((j) => {
         if (cancelled) return;
-        const fams = (j.fonts ?? []).map((f: { family: string }) => f.family);
-        setCustomFonts(fams);
+        const list: { id: string; family: string }[] = j.fonts ?? [];
+        setCustomFonts(list.map((f) => f.family));
+        // Load the actual faces so the canvas can render them (best-effort).
+        void loadCustomFontFaces(list);
       })
       .catch(() => !cancelled && setCustomFonts([]));
     return () => {

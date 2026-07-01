@@ -242,6 +242,10 @@ export function DesignElementLayer({
                       : "none",
                 transformOrigin: "top left",
                 fontSize: Math.max(8, el.fontSize * scale),
+                // Preview the chosen font live (faces loaded browser-side by
+                // the designer). Falls back to a default if a face isn't
+                // loaded, matching the PDF engine's own fallback.
+                fontFamily: el.fontFamily || undefined,
                 color: el.color,
                 background: isSel ? "rgba(37,99,235,0.06)" : "transparent",
               }}

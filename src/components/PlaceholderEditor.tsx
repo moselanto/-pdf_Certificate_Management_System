@@ -201,6 +201,12 @@ export function PlaceholderEditor({
                   transform: anchorTransform(ph),
                   transformOrigin: "top left",
                   fontSize: isImage ? undefined : Math.max(9, ph.fontSize * scale),
+                  // Preview the chosen font live on the canvas. The font faces
+                  // are loaded browser-side by the designer (bundled via
+                  // @font-face, custom via the FontFace API); if a face isn't
+                  // loaded the browser falls back to a default, matching the
+                  // engine. Skip for image-type chips (no text to style).
+                  fontFamily: isImage ? undefined : ph.fontFamily || undefined,
                   width: isImage && ph.width ? ph.width * scale : undefined,
                   height: isImage && ph.height ? ph.height * scale : undefined,
                   padding: ph.kind === "course_list" ? 0 : undefined,

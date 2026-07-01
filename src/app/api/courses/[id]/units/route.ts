@@ -3,6 +3,7 @@
 //
 // Like placeholders, the editor saves the whole ordered list at once. We
 // re-derive sort_order from array position so drag-reordering "just works".
+// Units may carry an optional `section` grouping heading (e.g. "Theory").
 
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -25,17 +26,26 @@ export async function GET(
   const db = createSupabaseServerClient();
   const { data, error } = await db
     .from("course_units")
-    .select("id, sort_order, title")
+    // "*" so the optional `section` column is included when present, without
+    // breaking if it hasn't been migrated yet.
+    .select("*")
     .eq("course_id", params.id)
     .order("sort_order");
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json({
-    units: (data ?? []).map((u) => ({ id: u.id, sortOrder: u.sort_order, title: u.title })),
+    units: (data ?? []).map((u) => ({
+      id: u.id,
+      sortOrder: u.sort_order,
+      title: u.title,
+      section: (u.section ?? undefined) as string | undefined,
+    })),
   });
 }
 
 const putSchema = z.object({
-  units: z.array(z.object({ title: z.string().min(1) })),
+  units: z.array(
+    z.object({ title: z.string().min(1), section: z.string().optional() }),
+  ),
 });
 
 export async function PUT(
@@ -63,8 +73,20 @@ export async function PUT(
         course_id: params.id,
         sort_order: i,
         title: u.title,
+        ...(u.section ? { section: u.section } : {}),
       }));
-      const { error: insErr } = await db.from("course_units").insert(rows);
+      let { error: insErr } = await db.from("course_units").insert(rows);
+      // Graceful fallback: if the optional `section` column hasn't been
+      // migrated yet, save the units without grouping so nothing is lost.
+      // Run migration 012 to enable section headings.
+      if (insErr && /section/i.test(insErr.message)) {
+        const flatRows = units.map((u, i) => ({
+          course_id: params.id,
+          sort_order: i,
+          title: u.title,
+        }));
+        ({ error: insErr } = await db.from("course_units").insert(flatRows));
+      }
       if (insErr) throw new Error(insErr.message);
     }
     return NextResponse.json({ saved: units.length });

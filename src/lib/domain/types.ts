@@ -141,6 +141,13 @@ export interface CourseUnit {
   id: string;
   sortOrder: number;
   title: string;
+  /**
+   * Optional section/group heading this unit falls under (e.g. "Theory",
+   * "Practical"). Consecutive units sharing a section render together beneath a
+   * bold sub-heading on the back page; units with no section render with no
+   * heading (a plain checklist), preserving the original flat behaviour.
+   */
+  section?: string;
 }
 
 /** Everything the engine needs to render one certificate. */

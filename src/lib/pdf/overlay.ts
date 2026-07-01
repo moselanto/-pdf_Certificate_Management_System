@@ -31,6 +31,7 @@ import {
 } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import type {
+  CourseUnit,
   DesignElement,
   DesignLineElement,
   DesignRectElement,
@@ -38,6 +39,7 @@ import type {
   PageSize,
   Placeholder,
   RenderInput,
+  TextAlign,
 } from "@/lib/domain/types";
 
 // Default page size for a from-scratch certificate when none is supplied.
@@ -236,6 +238,143 @@ function drawDesignRect(page: PDFPage, el: DesignRectElement) {
   page.drawRectangle(opts);
 }
 
+// ============================================================================
+// Course-content rendering (back page). Units may carry an optional `section`
+// so a flat list can become grouped sub-sections (e.g. "Theory", "Practical"),
+// each with its own checklist. Checkmarks are drawn as small VECTOR ticks
+// rather than a check glyph, because pdf-lib's standard WinAnsi fonts cannot
+// encode check/bullet characters (that previously crashed rendering).
+// ============================================================================
+
+type CourseContentLine =
+  | { kind: "heading"; text: string }
+  | { kind: "item"; text: string };
+
+/**
+ * Flatten ordered units into heading/item lines. A section heading is emitted
+ * once, when the section changes; units without a section emit items only, so a
+ * plain (ungrouped) list renders exactly as before (just with a tick marker).
+ */
+function unitsToContentLines(units: CourseUnit[]): CourseContentLine[] {
+  const lines: CourseContentLine[] = [];
+  let currentSection: string | undefined;
+  for (const u of units) {
+    const section = u.section?.trim() || undefined;
+    if (section) {
+      if (section !== currentSection) {
+        lines.push({ kind: "heading", text: section });
+        currentSection = section;
+      }
+    } else {
+      currentSection = undefined;
+    }
+    lines.push({ kind: "item", text: u.title });
+  }
+  return lines;
+}
+
+/** Draw a small vector checkmark whose lower-left sits near a text baseline. */
+function drawCheck(
+  page: PDFPage,
+  x: number,
+  baselineY: number,
+  size: number,
+  color: RGB,
+) {
+  const t = Math.max(0.8, size * 0.08);
+  page.drawLine({
+    start: { x: x + size * 0.02, y: baselineY + size * 0.3 },
+    end: { x: x + size * 0.24, y: baselineY + size * 0.06 },
+    thickness: t,
+    color,
+  });
+  page.drawLine({
+    start: { x: x + size * 0.24, y: baselineY + size * 0.06 },
+    end: { x: x + size * 0.6, y: baselineY + size * 0.66 },
+    thickness: t,
+    color,
+  });
+}
+
+interface CourseContentLayout {
+  anchorX: number;
+  align?: TextAlign;
+  size: number;
+  topY: number; // top-left origin start
+  maxWidth?: number; // optional item wrap width in points
+  color: RGB;
+  font: PDFFont; // item font
+  headingFont: PDFFont; // section-heading font (bold)
+}
+
+/**
+ * Render grouped course content (section headings + checkmark items) starting
+ * at layout.topY (top-left origin). Returns the next free topY. Shared by the
+ * placed-box, auto-back-page, and fixed-layout paths so all three group and
+ * tick identically.
+ */
+function renderCourseContent(
+  page: PDFPage,
+  units: CourseUnit[],
+  layout: CourseContentLayout,
+): number {
+  const pageHeight = page.getHeight();
+  const size = layout.size;
+  const itemGap = Math.max(4, Math.round(size * 0.5));
+  const headingSize = Math.round(size * 1.15);
+  const headingGapBefore = Math.round(size * 0.7);
+  const headingGapAfter = Math.round(size * 0.3);
+  const checkAdvance = size * 0.62 + size * 0.3;
+  let topY = layout.topY;
+
+  const drawRow = (
+    text: string,
+    drawSize: number,
+    rowFont: PDFFont,
+    withCheck: boolean,
+    indent: number,
+  ) => {
+    const textWidth = rowFont.widthOfTextAtSize(text, drawSize);
+    const lead = withCheck ? checkAdvance : indent;
+    const total = lead + textWidth;
+    let startX = layout.anchorX;
+    if (layout.align === "center") startX = layout.anchorX - total / 2;
+    else if (layout.align === "right") startX = layout.anchorX - total;
+    const yBaseline = pageHeight - topY - drawSize;
+    if (withCheck) {
+      drawCheck(page, startX, yBaseline, drawSize, layout.color);
+    }
+    page.drawText(text, {
+      x: startX + lead,
+      y: yBaseline,
+      size: drawSize,
+      font: rowFont,
+      color: layout.color,
+    });
+  };
+
+  for (const line of unitsToContentLines(units)) {
+    if (line.kind === "heading") {
+      topY += headingGapBefore;
+      drawRow(line.text, headingSize, layout.headingFont, false, 0);
+      topY += headingSize + headingGapAfter;
+    } else {
+      const itemMax =
+        layout.maxWidth && layout.maxWidth > 0
+          ? Math.max(40, layout.maxWidth - checkAdvance)
+          : undefined;
+      const wrapped = itemMax
+        ? wrapToWidth(line.text, layout.font, size, itemMax)
+        : [line.text];
+      wrapped.forEach((sub, idx) => {
+        drawRow(sub, size, layout.font, idx === 0, idx === 0 ? 0 : checkAdvance);
+        topY += size + itemGap;
+      });
+    }
+  }
+  return topY;
+}
+
 /**
  * Render a certificate PDF from a template + values.
  * Returns the finished PDF as bytes (ready to upload or stream for download).
@@ -381,7 +520,7 @@ export async function renderCertificate(input: RenderInput): Promise<Uint8Array>
     const font = await getFont("Helvetica");
     const headingFont = await getFont("Helvetica-Bold");
     const sorted = [...input.units].sort((a, b) => a.sortOrder - b.sortOrder);
-    const count = sorted.length;
+    const contentLineCount = unitsToContentLines(sorted).length;
 
     // If the designer placed a "course_list" box, render the units THERE at the
     // user's chosen position, font size, width and alignment. This gives full
@@ -392,18 +531,13 @@ export async function renderCertificate(input: RenderInput): Promise<Uint8Array>
 
     if (listPh) {
       const size = listPh.fontSize || 16;
-      const gap = Math.max(4, Math.round(size * 0.5));
-      const lineStep = size + gap;
       const maxWidth = listPh.width; // optional wrap width in points
-      // WinAnsi-safe bullet: pdf-lib's standard fonts cannot encode U+2022 ("•"),
-      // so we use a hyphen marker that always renders.
-      const bullet = "-  ";
 
       // Top-left origin: listPh.y is where the title/first line's top sits.
       let topY = listPh.y;
 
       // Optional TITLE above the list. The box's `label` is used as the title
-      // (e.g. "Units Covered"). We skip the generic default "Course List" so an
+      // (e.g. "Course Content"). We skip the generic default "Course List" so an
       // untitled box stays untitled. Title is bold and ~1.4x the unit size,
       // aligned the same way (left/center/right) as the list.
       const titleText = (listPh.label ?? "").trim();
@@ -426,32 +560,24 @@ export async function renderCertificate(input: RenderInput): Promise<Uint8Array>
         topY += titleSize + Math.max(6, Math.round(size * 0.6));
       }
 
-      for (const unit of sorted) {
-        const full = `${bullet}${unit.title}`;
-        // Simple width-based wrapping when a width is set.
-        const wrapped =
-          maxWidth && maxWidth > 0
-            ? wrapToWidth(full, font, size, maxWidth)
-            : [full];
-        for (const line of wrapped) {
-          const lineWidth = font.widthOfTextAtSize(line, size);
-          let x = listPh.x;
-          if (listPh.align === "center") x = listPh.x - lineWidth / 2;
-          else if (listPh.align === "right") x = listPh.x - lineWidth;
-          const yBaseline = pageHeight - topY - size;
-          backPage.drawText(line, { x, y: yBaseline, size, font, color });
-          topY += lineStep;
-        }
-      }
+      // Grouped sections (or a plain checklist when no unit has a section).
+      renderCourseContent(backPage, sorted, {
+        anchorX: listPh.x,
+        align: listPh.align,
+        size,
+        topY,
+        maxWidth,
+        color,
+        font,
+        headingFont,
+      });
       return out.save();
     }
 
     if (backWasAutoCreated || input.unitsLayout?.center) {
       // AUTO-CREATED (or explicitly centered) back page:
       // - centered heading + subtitle + a thin divider line
-      // - units are LEFT-ALIGNED to a common left edge, but the whole block is
-      //   CENTERED on the page (left edge = (pageWidth - widestLine) / 2), which
-      //   reads better for long unit titles than per-line centering.
+      // - grouped course content is rendered centered below the divider
       // - font scales DOWN as the list grows so it always fits on one page.
       const heading = "Course Units";
       const headingSize = 24;
@@ -488,38 +614,22 @@ export async function renderCertificate(input: RenderInput): Promise<Uint8Array>
         color: hexToRgb("#C9A227"),
       });
 
-      // Dynamic sizing: big for few, smaller for many (clamped 11-26pt).
-      const size = Math.max(11, Math.min(26, Math.round(90 / Math.max(3, count))));
-      const gap = Math.max(6, Math.round(size * 0.55));
-      const lineStep = size + gap;
-
-      // Compute the widest line so we can left-align all lines to one edge while
-      // keeping the block centered on the page.
-      // WinAnsi-safe bullet ("-"): pdf-lib's standard fonts cannot encode U+2022.
-      const lines = sorted.map((u) => `-  ${u.title}`);
-      const widest = lines.reduce(
-        (m, l) => Math.max(m, font.widthOfTextAtSize(l, size)),
-        0,
+      // Dynamic sizing: big for few lines, smaller for many (clamped 11-26pt).
+      const size = Math.max(
+        11,
+        Math.min(26, Math.round(90 / Math.max(3, contentLineCount))),
       );
-      const blockLeft = Math.max(64, (pageWidth - widest) / 2);
-
-      // Vertically center the block in the area below the divider.
-      const areaTop = dividerY - 28;
-      const areaBottom = 80;
-      const blockHeight = count * lineStep;
-      const areaMid = (areaTop + areaBottom) / 2;
-      let baseline = areaMid + blockHeight / 2 - size;
-      if (baseline > areaTop - size) baseline = areaTop - size;
-
-      lines.forEach((line) => {
-        backPage!.drawText(line, {
-          x: blockLeft, // left-aligned, but block is centered as a group
-          y: baseline,
-          size,
-          font,
-          color,
-        });
-        baseline -= lineStep;
+      // Start the grouped content just below the divider (top-left origin).
+      const contentTopY = pageHeight - dividerY + 22;
+      renderCourseContent(backPage, sorted, {
+        anchorX: pageWidth / 2,
+        align: "center",
+        size,
+        topY: contentTopY,
+        maxWidth: pageWidth * 0.7,
+        color,
+        font,
+        headingFont,
       });
     } else {
       // USER-SUPPLIED back design: honour the configured fixed layout so it
@@ -527,21 +637,14 @@ export async function renderCertificate(input: RenderInput): Promise<Uint8Array>
       const startY = input.unitsLayout?.y ?? 200;
       const startX = input.unitsLayout?.x ?? 72;
       const size = input.unitsLayout?.fontSize ?? 13;
-      const gap = input.unitsLayout?.lineGap ?? 8;
-      // WinAnsi-safe default bullet ("-"): pdf-lib's standard fonts cannot
-      // encode U+2022 ("•"). A caller may still pass a custom bullet, but it
-      // must be WinAnsi-encodable or rendering will throw.
-      const bullet = input.unitsLayout?.bullet ?? "-  ";
-
-      sorted.forEach((unit, i) => {
-        const lineY = pageHeight - startY - i * (size + gap) - size;
-        backPage!.drawText(`${bullet}${unit.title}`, {
-          x: startX,
-          y: lineY,
-          size,
-          font,
-          color,
-        });
+      renderCourseContent(backPage, sorted, {
+        anchorX: startX,
+        align: "left",
+        size,
+        topY: startY,
+        color,
+        font,
+        headingFont,
       });
     }
   }

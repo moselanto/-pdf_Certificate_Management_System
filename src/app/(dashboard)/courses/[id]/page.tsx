@@ -13,11 +13,14 @@ export default async function CoursePage({ params }: { params: { id: string } })
 
   const { data: unitRows } = await db
     .from("course_units")
-    .select("id, sort_order, title")
+    .select("*")
     .eq("course_id", params.id)
     .order("sort_order");
 
-  const units = (unitRows ?? []).map((u) => ({ title: u.title as string }));
+  const units = (unitRows ?? []).map((u) => ({
+    title: u.title as string,
+    section: (u.section ?? undefined) as string | undefined,
+  }));
 
   return (
     <div className="max-w-2xl space-y-6">

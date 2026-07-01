@@ -76,13 +76,17 @@ export async function generateCertificate(
   if (args.courseId) {
     const { data: unitRows } = await db
       .from("course_units")
-      .select("id, sort_order, title")
+      // Select all columns so the optional `section` grouping heading is
+      // included when present, but nothing breaks if the column hasn't been
+      // migrated yet (u.section is simply undefined).
+      .select("*")
       .eq("course_id", args.courseId)
       .order("sort_order");
     units = (unitRows ?? []).map((u) => ({
       id: u.id,
       sortOrder: u.sort_order,
       title: u.title,
+      section: (u.section ?? undefined) as string | undefined,
     }));
   }
 

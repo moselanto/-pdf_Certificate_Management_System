@@ -229,3 +229,78 @@ describe("renderCertificate — custom fonts", () => {
     expect(out.getPageCount()).toBe(1);
   });
 });
+
+// --- Grouped course content (sections + vector checkmarks) ------------------
+// Units may carry an optional `section` so the back page groups them under bold
+// sub-headings, each with its own checkmark list. These assert no throw + a
+// valid 2-page PDF down each of the three course-list paths, and that a plain
+// (sectionless) list still renders.
+describe("renderCertificate — grouped course content", () => {
+  const groupedUnits = [
+    { id: "u1", sortOrder: 0, title: "Duty of Care", section: "Theory" },
+    { id: "u2", sortOrder: 1, title: "Safeguarding Adults and Children", section: "Theory" },
+    { id: "u3", sortOrder: 2, title: "Basic Life Support", section: "Practical" },
+    { id: "u4", sortOrder: 3, title: "Moving and Handling", section: "Practical" },
+  ];
+
+  it("renders grouped sections in a placed course_list box", async () => {
+    const frontPdf = await blankTemplate();
+    const backPdf = await blankTemplate();
+    const placeholders: Placeholder[] = [
+      {
+        id: "cl",
+        page: "back",
+        kind: "course_list",
+        fieldKey: "course_units",
+        label: "Course Content",
+        x: 421,
+        y: 120,
+        width: 500,
+        fontSize: 14,
+        fontFamily: "Helvetica",
+        color: "#123456",
+        align: "center",
+      },
+    ];
+    const bytes = await renderCertificate({ frontPdf, backPdf, placeholders, values: {}, units: groupedUnits });
+    const out = await PDFDocument.load(bytes);
+    expect(out.getPageCount()).toBe(2);
+  });
+
+  it("renders grouped sections on an auto-created back page", async () => {
+    const frontPdf = await blankTemplate();
+    const bytes = await renderCertificate({ frontPdf, placeholders: [], values: {}, units: groupedUnits });
+    const out = await PDFDocument.load(bytes);
+    expect(out.getPageCount()).toBe(2);
+  });
+
+  it("renders grouped sections on a user-supplied fixed layout", async () => {
+    const frontPdf = await blankTemplate();
+    const backPdf = await blankTemplate();
+    const bytes = await renderCertificate({
+      frontPdf,
+      backPdf,
+      placeholders: [],
+      values: {},
+      units: groupedUnits,
+      unitsLayout: { x: 72, y: 200, fontSize: 12 },
+    });
+    const out = await PDFDocument.load(bytes);
+    expect(out.getPageCount()).toBe(2);
+  });
+
+  it("still renders a plain checklist when no unit has a section", async () => {
+    const frontPdf = await blankTemplate();
+    const backPdf = await blankTemplate();
+    const bytes = await renderCertificate({
+      frontPdf,
+      backPdf,
+      placeholders: [],
+      values: {},
+      units: [{ id: "u1", sortOrder: 0, title: "Use of full body hoist" }],
+      unitsLayout: { x: 72, y: 200, fontSize: 12 },
+    });
+    const out = await PDFDocument.load(bytes);
+    expect(out.getPageCount()).toBe(2);
+  });
+});

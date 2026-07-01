@@ -1,13 +1,20 @@
 "use client";
 
-// Add, edit, reorder, and remove a course's units/competencies. Order is the
-// array order; the API derives sort_order from position so reordering is
-// effortless. Uses native HTML5 drag-and-drop to keep dependencies minimal.
+// Add, edit, reorder, and remove a course's units/competencies — OR paste a
+// whole "course content" page (headings + "- " items) at once. Order is the
+// array order; the API derives sort_order from position so drag-reordering
+// "just works". Units may carry an optional `section` grouping heading, which
+// renders as a bold sub-heading over its own checklist on the back page.
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
+import {
+  courseItemsToText,
+  parseCourseContent,
+} from "@/lib/courses/parseCourseContent";
 
 interface Unit {
   title: string;
+  section?: string;
 }
 
 export function CourseUnitsEditor({
@@ -19,6 +26,8 @@ export function CourseUnitsEditor({
 }) {
   const [units, setUnits] = useState<Unit[]>(initialUnits);
   const [draft, setDraft] = useState("");
+  const [pasteText, setPasteText] = useState(() => courseItemsToText(initialUnits));
+  const [showPaste, setShowPaste] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -27,14 +36,16 @@ export function CourseUnitsEditor({
   const add = () => {
     const t = draft.trim();
     if (!t) return;
-    setUnits((u) => [...u, { title: t }]);
+    // A quick-added unit inherits the last unit's section so it stays in the
+    // current group.
+    setUnits((u) => [...u, { title: t, section: u[u.length - 1]?.section }]);
     setDraft("");
   };
 
   const remove = (i: number) => setUnits((u) => u.filter((_, idx) => idx !== i));
 
   const edit = (i: number, title: string) =>
-    setUnits((u) => u.map((unit, idx) => (idx === i ? { title } : unit)));
+    setUnits((u) => u.map((unit, idx) => (idx === i ? { ...unit, title } : unit)));
 
   const onDrop = (target: number) => {
     if (dragIndex === null || dragIndex === target) return;
@@ -47,6 +58,11 @@ export function CourseUnitsEditor({
     setDragIndex(null);
   };
 
+  const applyPaste = () => {
+    setUnits(parseCourseContent(pasteText));
+    setShowPaste(false);
+  };
+
   const save = async () => {
     setSaving(true);
     setError(null);
@@ -54,7 +70,14 @@ export function CourseUnitsEditor({
       const res = await fetch(`/api/courses/${courseId}/units`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ units: units.filter((u) => u.title.trim()) }),
+        body: JSON.stringify({
+          units: units
+            .filter((u) => u.title.trim())
+            .map((u) => ({
+              title: u.title,
+              ...(u.section ? { section: u.section } : {}),
+            })),
+        }),
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
@@ -77,36 +100,83 @@ export function CourseUnitsEditor({
         <span className="text-xs text-gray-400">{units.length} total</span>
       </div>
 
-      <ul className="space-y-2">
-        {units.map((u, i) => (
-          <li
-            key={i}
-            draggable
-            onDragStart={() => setDragIndex(i)}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={() => onDrop(i)}
-            className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2"
-          >
-            <span className="cursor-move text-gray-400" title="Drag to reorder">
-              ⋮⋮
-            </span>
-            <span className="w-6 text-xs text-gray-400">{i + 1}.</span>
-            <input
-              value={u.title}
-              onChange={(e) => edit(i, e.target.value)}
-              className="flex-1 rounded border-gray-200 bg-white text-sm"
+      {/* Paste a whole page of content (headings + "- " items) at once. */}
+      <div className="rounded-lg border border-brand-200 bg-brand-50/40 p-3">
+        <button
+          onClick={() => setShowPaste((s) => !s)}
+          className="text-sm font-semibold text-brand-700"
+        >
+          {showPaste ? "▾ " : "▸ "}Paste full page (headings + items)
+        </button>
+        {showPaste && (
+          <div className="mt-2 space-y-2">
+            <p className="text-xs text-gray-600">
+              A line on its own is a{" "}
+              <span className="font-semibold">section heading</span> (e.g.
+              Theory, Practical). A line starting with{" "}
+              <span className="font-mono">- </span> is a{" "}
+              <span className="font-semibold">checklist item</span>. Blank lines
+              are spacing. Applying replaces the list below.
+            </p>
+            <textarea
+              value={pasteText}
+              onChange={(e) => setPasteText(e.target.value)}
+              rows={10}
+              placeholder={
+                "Theory\n- Duty of Care\n- Safeguarding Adults and Children\n\nPractical\n- Basic Life Support\n- Moving and Handling"
+              }
+              className="w-full rounded-lg border border-gray-300 p-2 font-mono text-xs text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
             />
             <button
-              onClick={() => remove(i)}
-              className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+              onClick={applyPaste}
+              className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700"
             >
-              Remove
+              Apply to list
             </button>
-          </li>
-        ))}
+          </div>
+        )}
+      </div>
+
+      <ul className="space-y-2">
+        {units.map((u, i) => {
+          const prev = units[i - 1];
+          const showHeader = (u.section ?? "") !== (prev?.section ?? "");
+          return (
+            <Fragment key={i}>
+              {showHeader && u.section && (
+                <li className="pt-2 text-xs font-semibold uppercase tracking-wide text-brand-700">
+                  {u.section}
+                </li>
+              )}
+              <li
+                draggable
+                onDragStart={() => setDragIndex(i)}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={() => onDrop(i)}
+                className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2"
+              >
+                <span className="cursor-move text-gray-400" title="Drag to reorder">
+                  ⋮⋮
+                </span>
+                <span className="w-6 text-xs text-gray-400">{i + 1}.</span>
+                <input
+                  value={u.title}
+                  onChange={(e) => edit(i, e.target.value)}
+                  className="flex-1 rounded border-gray-200 bg-white text-sm"
+                />
+                <button
+                  onClick={() => remove(i)}
+                  className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+                >
+                  Remove
+                </button>
+              </li>
+            </Fragment>
+          );
+        })}
         {units.length === 0 && (
           <li className="rounded-lg border border-dashed border-gray-300 px-3 py-4 text-center text-xs text-gray-400">
-            No units yet. Add the first competency below.
+            No units yet. Add the first competency below, or paste a full page above.
           </li>
         )}
       </ul>

@@ -46,13 +46,16 @@ async function loadSampleSignature(): Promise<Uint8Array | undefined> {
   }
 }
 
+// Sample content shown in the live preview. Grouped under section headings so
+// the preview demonstrates the back-page "Course Content" layout (headings +
+// checkmark items). A course with no sections still previews as a plain list.
 const SAMPLE_UNITS = [
-  "Use of full body hoist",
-  "Use of stand aids",
-  "Use of a slide sheet",
-  "Use of turn-table and handling belt",
-  "Managing of safe transfer",
-].map((title, i) => ({ id: `sample_${i}`, sortOrder: i, title }));
+  { section: "Theory", title: "Awareness of Mental Health & Learning Disabilities" },
+  { section: "Theory", title: "Duty of Care" },
+  { section: "Theory", title: "Safeguarding Adults and Children" },
+  { section: "Practical", title: "Basic Life Support" },
+  { section: "Practical", title: "Moving and Handling" },
+].map((u, i) => ({ id: `sample_${i}`, sortOrder: i, title: u.title, section: u.section }));
 
 export async function POST(req: NextRequest) {
   try {

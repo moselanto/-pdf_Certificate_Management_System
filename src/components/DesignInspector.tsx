@@ -230,12 +230,30 @@ function LineFields({
 }) {
   return (
     <>
+      {/* Line width — a slider for quick, obvious adjustment plus a number box
+          for an exact value. Clamped 0.25–20 pt (line stays hairline-thin to
+          bold-rule thick). */}
+      <Row label={`Line width — ${el.thickness ?? 1} pt`}>
+        <input
+          type="range"
+          min={0.25}
+          max={20}
+          step={0.25}
+          value={el.thickness ?? 1}
+          onChange={(e) => onChange({ ...el, thickness: num(e.target.value, 1) })}
+          className="w-full"
+        />
+      </Row>
       <div className="grid grid-cols-2 gap-3">
-        <Row label="Thickness (pt)">
+        <Row label="Width (pt)">
           <input
             type="number"
+            min={0.25}
+            step={0.25}
             value={el.thickness}
-            onChange={(e) => onChange({ ...el, thickness: num(e.target.value, 1) })}
+            onChange={(e) =>
+              onChange({ ...el, thickness: Math.max(0.25, num(e.target.value, 1)) })
+            }
             className={inputCls}
           />
         </Row>

@@ -6,12 +6,20 @@
 // produced by the pdf-lib engine from the original PDF.
 //
 // Worker handling: pdf.js REQUIRES a workerSrc (an empty string throws
-// "No GlobalWorkerOptions.workerSrc specified"). Bundling the worker file URL
-// is fragile across hosts (Codespaces), so we instead fetch the worker script
-// that ships inside pdfjs-dist, wrap it in a Blob, and point workerSrc at that
-// Blob URL. This works in any browser without relying on the bundler resolving
-// a `?url` import, and avoids the main-thread "no worker" error.
+// "No GlobalWorkerOptions.workerSrc specified"). We point workerSrc at the
+// pinned CDN copy of the worker matching the installed pdfjs-dist version.
+//
+// IMPORTANT: do NOT resolve the worker via
+//   new URL("pdfjs-dist/legacy/build/pdf.worker.min.mjs", import.meta.url)
+// That makes webpack copy the pre-minified .mjs worker into the build output,
+// where Next.js's production Terser pass re-parses it as a script and fails
+// with "'import' and 'export' cannot be used outside of module code",
+// breaking `next build`. The CDN URL avoids the bundler touching the worker.
 // ============================================================================
+
+// Pinned to the installed pdfjs-dist version (see package.json: 4.0.379).
+const PDF_WORKER_CDN =
+  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.mjs";
 
 export interface RasterResult {
   dataUrl: string;
@@ -27,24 +35,10 @@ async function getPdfjs() {
   pdfjsPromise = (async () => {
     const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
-    // Build a Blob URL for the worker from the file shipped in pdfjs-dist.
-    // import.meta.url lets us resolve the worker relative to the pdf.js module
-    // in node_modules. We fetch it and wrap it in a Blob so no bundler magic
-    // or external CDN is needed.
-    try {
-      const workerUrl = new URL(
-        "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
-        import.meta.url,
-      );
-      const res = await fetch(workerUrl);
-      const code = await res.text();
-      const blob = new Blob([code], { type: "text/javascript" });
-      pdfjs.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
-    } catch {
-      // Last-resort fallback: pinned CDN worker matching the installed version.
-      pdfjs.GlobalWorkerOptions.workerSrc =
-        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.mjs";
-    }
+    // Point the worker at the pinned CDN build. This is resolved at runtime by
+    // the browser, so the bundler never processes (and Terser never chokes on)
+    // the pre-minified .mjs worker file.
+    pdfjs.GlobalWorkerOptions.workerSrc = PDF_WORKER_CDN;
 
     return pdfjs;
   })();

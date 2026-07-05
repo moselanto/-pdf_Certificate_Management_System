@@ -314,11 +314,14 @@ interface CourseContentLayout {
  * tick identically.
  */
 function renderCourseContent(
-  page: PDFPage,
+  page: PDFPage | null,
   units: CourseUnit[],
   layout: CourseContentLayout,
 ): number {
-  const pageHeight = page.getHeight();
+  // page === null => MEASURE ONLY: advance topY exactly as when drawing, but
+  // skip the actual draw calls. This lets measureCourseContent reuse the very
+  // same layout math the renderer draws with, so the two can never drift apart.
+  const pageHeight = page ? page.getHeight() : 0;
   const size = layout.size;
   const itemGap = Math.max(4, Math.round(size * 0.5));
   const headingSize = Math.round(size * 1.15);
@@ -341,23 +344,39 @@ function renderCourseContent(
     if (layout.align === "center") startX = layout.anchorX - total / 2;
     else if (layout.align === "right") startX = layout.anchorX - total;
     const yBaseline = pageHeight - topY - drawSize;
-    if (withCheck) {
-      drawCheck(page, startX, yBaseline, drawSize, layout.color);
+    if (page) {
+      if (withCheck) {
+        drawCheck(page, startX, yBaseline, drawSize, layout.color);
+      }
+      page.drawText(text, {
+        x: startX + lead,
+        y: yBaseline,
+        size: drawSize,
+        font: rowFont,
+        color: layout.color,
+      });
     }
-    page.drawText(text, {
-      x: startX + lead,
-      y: yBaseline,
-      size: drawSize,
-      font: rowFont,
-      color: layout.color,
-    });
   };
 
   for (const line of unitsToContentLines(units)) {
     if (line.kind === "heading") {
       topY += headingGapBefore;
-      drawRow(line.text, headingSize, layout.headingFont, false, 0);
-      topY += headingSize + headingGapAfter;
+      // Wrap long section headings to the full width too (not just items) so a
+      // long heading never runs off the edge.
+      const headMax =
+        layout.maxWidth && layout.maxWidth > 0
+          ? Math.max(40, layout.maxWidth)
+          : undefined;
+      const headWrapped = headMax
+        ? wrapToWidth(line.text, layout.headingFont, headingSize, headMax)
+        : [line.text];
+      const headLineGap = Math.max(2, Math.round(headingSize * 0.2));
+      headWrapped.forEach((sub, i) => {
+        drawRow(sub, headingSize, layout.headingFont, false, 0);
+        topY += headingSize;
+        if (i < headWrapped.length - 1) topY += headLineGap;
+      });
+      topY += headingGapAfter;
     } else {
       const itemMax =
         layout.maxWidth && layout.maxWidth > 0
@@ -373,6 +392,39 @@ function renderCourseContent(
     }
   }
   return topY;
+}
+
+/** Height (in points) the grouped content occupies at layout.size. */
+export function measureCourseContent(
+  units: CourseUnit[],
+  layout: CourseContentLayout,
+): number {
+  return renderCourseContent(null, units, layout) - layout.topY;
+}
+
+/**
+ * Largest font size in [minSize, maxSize] at which the grouped content fits
+ * within availableHeight. Wrapping is re-evaluated at each candidate size (a
+ * smaller font wraps fewer lines), so this shrinks-to-fit precisely. Falls back
+ * to minSize when even that overflows (extreme lists) — the best a single page
+ * can do.
+ */
+export function fitCourseContentSize(
+  units: CourseUnit[],
+  baseLayout: Omit<CourseContentLayout, "size">,
+  maxSize: number,
+  minSize: number,
+  availableHeight: number,
+): number {
+  const hi = Math.max(minSize, Math.round(maxSize));
+  for (let s = hi; s > minSize; s -= 1) {
+    if (
+      measureCourseContent(units, { ...baseLayout, size: s }) <= availableHeight
+    ) {
+      return s;
+    }
+  }
+  return minSize;
 }
 
 /**
@@ -520,7 +572,6 @@ export async function renderCertificate(input: RenderInput): Promise<Uint8Array>
     const font = await getFont("Helvetica");
     const headingFont = await getFont("Helvetica-Bold");
     const sorted = [...input.units].sort((a, b) => a.sortOrder - b.sortOrder);
-    const contentLineCount = unitsToContentLines(sorted).length;
 
     // If the designer placed a "course_list" box, render the units THERE at the
     // user's chosen position, font size, width and alignment. This gives full
@@ -530,8 +581,12 @@ export async function renderCertificate(input: RenderInput): Promise<Uint8Array>
     );
 
     if (listPh) {
-      const size = listPh.fontSize || 16;
-      const maxWidth = listPh.width; // optional wrap width in points
+      const requestedSize = listPh.fontSize || 16;
+      // Always wrap the list: use the box width when set, else a sensible
+      // fraction of the page, so long lines never run off the edge — even for a
+      // point (width-less) box.
+      const wrapWidth =
+        listPh.width && listPh.width > 0 ? listPh.width : pageWidth * 0.7;
 
       // Top-left origin: listPh.y is where the title/first line's top sits.
       let topY = listPh.y;
@@ -543,7 +598,7 @@ export async function renderCertificate(input: RenderInput): Promise<Uint8Array>
       const titleText = (listPh.label ?? "").trim();
       const showTitle = titleText && titleText.toLowerCase() !== "course list";
       if (showTitle) {
-        const titleSize = Math.round(size * 1.4);
+        const titleSize = Math.round(requestedSize * 1.4);
         const tw = headingFont.widthOfTextAtSize(titleText, titleSize);
         let tx = listPh.x;
         if (listPh.align === "center") tx = listPh.x - tw / 2;
@@ -557,20 +612,36 @@ export async function renderCertificate(input: RenderInput): Promise<Uint8Array>
           color,
         });
         // Advance below the title (title height + a little breathing room).
-        topY += titleSize + Math.max(6, Math.round(size * 0.6));
+        topY += titleSize + Math.max(6, Math.round(requestedSize * 0.6));
       }
 
-      // Grouped sections (or a plain checklist when no unit has a section).
-      renderCourseContent(backPage, sorted, {
+      // Shrink-to-fit inside the box: available vertical space runs from the
+      // current topY down to the bottom of the box (when it has a height), else
+      // down to a page bottom margin. So a long list scales DOWN to fit instead
+      // of spilling past the frame — matching the neatly-fitted design.
+      const bottomMargin = 28;
+      const boxBottom =
+        listPh.height && listPh.height > 0
+          ? listPh.y + listPh.height
+          : pageHeight - bottomMargin;
+      const availableHeight = Math.max(24, boxBottom - topY);
+      const listBase = {
         anchorX: listPh.x,
         align: listPh.align,
-        size,
         topY,
-        maxWidth,
+        maxWidth: wrapWidth,
         color,
         font,
         headingFont,
-      });
+      };
+      const fittedSize = fitCourseContentSize(
+        sorted,
+        listBase,
+        requestedSize,
+        7,
+        availableHeight,
+      );
+      renderCourseContent(backPage, sorted, { ...listBase, size: fittedSize });
       return out.save();
     }
 
@@ -614,38 +685,61 @@ export async function renderCertificate(input: RenderInput): Promise<Uint8Array>
         color: hexToRgb("#C9A227"),
       });
 
-      // Dynamic sizing: big for few lines, smaller for many (clamped 11-26pt).
-      const size = Math.max(
-        11,
-        Math.min(26, Math.round(90 / Math.max(3, contentLineCount))),
-      );
       // Start the grouped content just below the divider (top-left origin).
       const contentTopY = pageHeight - dividerY + 22;
-      renderCourseContent(backPage, sorted, {
+      // Shrink-to-fit: measure the real wrapped height and pick the largest
+      // size (<=26pt) that fits from here down to a bottom margin, so even a
+      // very long list stays on this one page instead of running off the bottom.
+      const bottomMargin = 54;
+      const availableHeight = Math.max(
+        40,
+        pageHeight - bottomMargin - contentTopY,
+      );
+      const centeredBase = {
         anchorX: pageWidth / 2,
-        align: "center",
-        size,
+        align: "center" as const,
         topY: contentTopY,
         maxWidth: pageWidth * 0.7,
         color,
         font,
         headingFont,
-      });
+      };
+      const size = fitCourseContentSize(
+        sorted,
+        centeredBase,
+        26,
+        9,
+        availableHeight,
+      );
+      renderCourseContent(backPage, sorted, { ...centeredBase, size });
     } else {
-      // USER-SUPPLIED back design: honour the configured fixed layout so it
-      // lands exactly where their artwork expects it.
+      // USER-SUPPLIED back design: honour the configured fixed position, but
+      // still WRAP to the page width and shrink-to-fit the height so a long list
+      // never runs off the edge or past the bottom of their artwork.
       const startY = input.unitsLayout?.y ?? 200;
       const startX = input.unitsLayout?.x ?? 72;
-      const size = input.unitsLayout?.fontSize ?? 13;
-      renderCourseContent(backPage, sorted, {
+      const requestedSize = input.unitsLayout?.fontSize ?? 13;
+      const rightMargin = 48;
+      const bottomMargin = 40;
+      const wrapWidth = Math.max(120, pageWidth - startX - rightMargin);
+      const availableHeight = Math.max(24, pageHeight - bottomMargin - startY);
+      const fixedBase = {
         anchorX: startX,
-        align: "left",
-        size,
+        align: "left" as const,
         topY: startY,
+        maxWidth: wrapWidth,
         color,
         font,
         headingFont,
-      });
+      };
+      const size = fitCourseContentSize(
+        sorted,
+        fixedBase,
+        requestedSize,
+        7,
+        availableHeight,
+      );
+      renderCourseContent(backPage, sorted, { ...fixedBase, size });
     }
   }
 

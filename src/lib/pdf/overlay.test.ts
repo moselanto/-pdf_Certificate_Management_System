@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { PDFDocument } from "pdf-lib";
-import { renderCertificate, readTemplatePageSize } from "./overlay";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import {
+  renderCertificate,
+  readTemplatePageSize,
+  measureCourseContent,
+  fitCourseContentSize,
+} from "./overlay";
 import type { Placeholder } from "@/lib/domain/types";
 
 // Builds a blank single-page PDF to act as a template fixture.
@@ -299,6 +304,150 @@ describe("renderCertificate — grouped course content", () => {
       values: {},
       units: [{ id: "u1", sortOrder: 0, title: "Use of full body hoist" }],
       unitsLayout: { x: 72, y: 200, fontSize: 12 },
+    });
+    const out = await PDFDocument.load(bytes);
+    expect(out.getPageCount()).toBe(2);
+  });
+});
+
+// --- Auto-fit: wrapping + shrink-to-fit -------------------------------------
+// A long course list must WRAP (headings and items) and SHRINK its font so it
+// always sits inside the frame instead of spilling off the edge / bottom.
+describe("course content auto-fit (measure + shrink-to-fit)", () => {
+  async function makeFonts() {
+    const pdf = await PDFDocument.create();
+    const font = await pdf.embedFont(StandardFonts.Helvetica);
+    const headingFont = await pdf.embedFont(StandardFonts.HelveticaBold);
+    return { font, headingFont };
+  }
+
+  const manyUnits = Array.from({ length: 24 }, (_, i) => ({
+    id: `u${i}`,
+    sortOrder: i,
+    title: `Competency number ${i + 1} covering an important care topic`,
+  }));
+
+  it("measured height grows as more units are added", async () => {
+    const { font, headingFont } = await makeFonts();
+    const base = {
+      anchorX: 300,
+      align: "center" as const,
+      topY: 0,
+      maxWidth: 400,
+      color: rgb(0.1, 0.1, 0.1),
+      font,
+      headingFont,
+    };
+    const few = measureCourseContent(manyUnits.slice(0, 3), { ...base, size: 14 });
+    const lots = measureCourseContent(manyUnits, { ...base, size: 14 });
+    expect(lots).toBeGreaterThan(few);
+  });
+
+  it("returns the max size when there is ample room, and shrinks when tight", async () => {
+    const { font, headingFont } = await makeFonts();
+    const base = {
+      anchorX: 300,
+      align: "center" as const,
+      topY: 0,
+      maxWidth: 400,
+      color: rgb(0.1, 0.1, 0.1),
+      font,
+      headingFont,
+    };
+    const roomy = fitCourseContentSize(manyUnits, base, 26, 7, 100000);
+    const tight = fitCourseContentSize(manyUnits, base, 26, 7, 220);
+    expect(roomy).toBe(26);
+    expect(tight).toBeLessThan(roomy);
+    expect(tight).toBeGreaterThanOrEqual(7);
+  });
+
+  it("wraps long items so a long title measures taller than a short one", async () => {
+    const { font, headingFont } = await makeFonts();
+    const base = {
+      anchorX: 300,
+      align: "left" as const,
+      topY: 0,
+      maxWidth: 200,
+      color: rgb(0, 0, 0),
+      font,
+      headingFont,
+      size: 14,
+    };
+    const shortItem = measureCourseContent(
+      [{ id: "a", sortOrder: 0, title: "Short" }],
+      base,
+    );
+    const longItem = measureCourseContent(
+      [
+        {
+          id: "b",
+          sortOrder: 0,
+          title:
+            "A very long unit title that certainly wraps across a narrow column width",
+        },
+      ],
+      base,
+    );
+    expect(longItem).toBeGreaterThan(shortItem);
+  });
+
+  it("wraps long section headings too", async () => {
+    const { font, headingFont } = await makeFonts();
+    const base = {
+      anchorX: 300,
+      align: "center" as const,
+      topY: 0,
+      maxWidth: 160,
+      color: rgb(0, 0, 0),
+      font,
+      headingFont,
+      size: 14,
+    };
+    const shortHeading = measureCourseContent(
+      [{ id: "a", sortOrder: 0, title: "Item", section: "Theory" }],
+      base,
+    );
+    const longHeading = measureCourseContent(
+      [
+        {
+          id: "b",
+          sortOrder: 0,
+          title: "Item",
+          section:
+            "A Very Long Section Heading That Must Wrap Across Several Lines Here",
+        },
+      ],
+      base,
+    );
+    expect(longHeading).toBeGreaterThan(shortHeading);
+  });
+
+  it("renders a long list in a small placed box on a single back page", async () => {
+    const frontPdf = await blankTemplate();
+    const backPdf = await blankTemplate();
+    const placeholders: Placeholder[] = [
+      {
+        id: "cl",
+        page: "back",
+        kind: "course_list",
+        fieldKey: "course_units",
+        label: "Course Content",
+        x: 421,
+        y: 120,
+        width: 500,
+        height: 360,
+        fontSize: 18,
+        fontFamily: "Helvetica",
+        color: "#123456",
+        align: "center",
+      },
+    ];
+    const bytes = await renderCertificate({
+      frontPdf,
+      backPdf,
+      placeholders,
+      values: {},
+      units: manyUnits,
     });
     const out = await PDFDocument.load(bytes);
     expect(out.getPageCount()).toBe(2);

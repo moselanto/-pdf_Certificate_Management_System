@@ -5,7 +5,7 @@
 // The user types a free-text brief OR answers a few guided questions, and we
 // generate SEVERAL visually DISTINCT certificate background images (real
 // artwork, not just text). Each sample shows a thumbnail. The user can:
-//   - "Generate more" — replace the set with a fresh batch of different designs
+//   - "Generate more" — append a fresh batch of different designs to the set
 //   - "Use this template" — auto-create a real, ready-to-use template from the
 //     chosen background (NO manual PDF upload). The standard fields are
 //     auto-placed; the user is taken straight into the designer to fine-tune.
@@ -46,10 +46,12 @@ export function AiTemplateHelper() {
   // Which suggestion is currently being turned into a template.
   const [creatingId, setCreatingId] = useState<string | null>(null);
 
-  const run = async (nextVariation: number) => {
+  const run = async (nextVariation: number, append: boolean) => {
     setLoading(true);
     setError(null);
-    setSuggestions([]);
+    // On a fresh "Generate designs" we clear the set; on "Generate more" we keep
+    // the existing designs and append the new batch so options accumulate.
+    if (!append) setSuggestions([]);
     try {
       const base =
         mode === "brief"
@@ -62,7 +64,8 @@ export function AiTemplateHelper() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Could not generate designs");
-      setSuggestions(json.suggestions ?? []);
+      const batch: Suggestion[] = json.suggestions ?? [];
+      setSuggestions((prev) => (append ? [...prev, ...batch] : batch));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -72,13 +75,13 @@ export function AiTemplateHelper() {
 
   const generate = () => {
     setVariation(0);
-    run(0);
+    run(0, false);
   };
 
   const generateMore = () => {
     const next = variation + 3;
     setVariation(next);
-    run(next);
+    run(next, true);
   };
 
   // Create a real template from the chosen background and open the designer.
@@ -250,14 +253,23 @@ export function AiTemplateHelper() {
                   key={s.id}
                   className="flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white"
                 >
-                  {/* Real generated background preview */}
+                  {/* Real generated background preview. The design is a PDF, so
+                      render it with the browser's native PDF viewer via <object>
+                      (the same reliable approach TemplateCard uses) — an <img>
+                      tag cannot display a PDF, which left the preview blank. */}
                   {s.imageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={s.imageUrl}
-                      alt={s.name}
-                      className="aspect-[4/3] w-full object-cover"
-                    />
+                    <div className="relative aspect-[4/3] w-full overflow-hidden bg-gray-50">
+                      <object
+                        data={`${s.imageUrl}#toolbar=0&navpanes=0&scrollbar=0&view=Fit`}
+                        type="application/pdf"
+                        aria-label={`${s.name} preview`}
+                        className="pointer-events-none absolute inset-0 h-full w-full"
+                      >
+                        <div className="flex h-full w-full items-center justify-center text-xs text-gray-400">
+                          preview unavailable
+                        </div>
+                      </object>
+                    </div>
                   ) : (
                     <div className="flex aspect-[4/3] w-full items-center justify-center bg-gray-50 text-xs text-gray-400">
                       preview unavailable

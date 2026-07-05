@@ -428,6 +428,26 @@ export function fitCourseContentSize(
 }
 
 /**
+ * Top-left Y for a block of height `totalHeight` whose vertical CENTRE should
+ * sit at `centerY`, clamped so the block never runs past the top/bottom page
+ * margins. When the block is taller than the usable page it starts at the top
+ * margin (overflow is unavoidable). Used to vertically centre the course list
+ * on its anchor / the page centre.
+ */
+export function centerBlockTop(
+  centerY: number,
+  totalHeight: number,
+  pageHeight: number,
+  topMargin: number,
+  bottomMargin: number,
+): number {
+  const minTop = topMargin;
+  const maxTop = pageHeight - bottomMargin - totalHeight;
+  if (maxTop < minTop) return minTop;
+  return Math.max(minTop, Math.min(maxTop, centerY - totalHeight / 2));
+}
+
+/**
  * Render a certificate PDF from a template + values.
  * Returns the finished PDF as bytes (ready to upload or stream for download).
  */
@@ -588,17 +608,69 @@ export async function renderCertificate(input: RenderInput): Promise<Uint8Array>
       const wrapWidth =
         listPh.width && listPh.width > 0 ? listPh.width : pageWidth * 0.7;
 
-      // Top-left origin: listPh.y is where the title/first line's top sits.
-      let topY = listPh.y;
-
       // Optional TITLE above the list. The box's `label` is used as the title
       // (e.g. "Course Content"). We skip the generic default "Course List" so an
       // untitled box stays untitled. Title is bold and ~1.4x the unit size,
       // aligned the same way (left/center/right) as the list.
       const titleText = (listPh.label ?? "").trim();
-      const showTitle = titleText && titleText.toLowerCase() !== "course list";
+      const showTitle =
+        Boolean(titleText) && titleText.toLowerCase() !== "course list";
+      const titleSize = showTitle ? Math.round(requestedSize * 1.4) : 0;
+      const titleGap = showTitle ? Math.max(6, Math.round(requestedSize * 0.6)) : 0;
+      const titleBlock = titleSize + titleGap;
+
+      // Region the whole block (title + list) may occupy, and the point it
+      // should be centred on. When the box has an explicit height, use it and
+      // treat the box's MIDDLE as the centre; otherwise the anchor is a point,
+      // so use the usable page height and centre the block on listPh.y itself.
+      const topMargin = 40;
+      const bottomMargin = 40;
+      const hasBoxHeight = Boolean(listPh.height && listPh.height > 0);
+      const regionHeight = hasBoxHeight
+        ? (listPh.height as number)
+        : pageHeight - topMargin - bottomMargin;
+      const centerY = hasBoxHeight
+        ? listPh.y + (listPh.height as number) / 2
+        : listPh.y;
+
+      // Shrink the list to fit the space left after the title, then measure the
+      // fitted list so we know the true block height.
+      const listBase = {
+        anchorX: listPh.x,
+        align: listPh.align,
+        topY: 0,
+        maxWidth: wrapWidth,
+        color,
+        font,
+        headingFont,
+      };
+      const availableForList = Math.max(24, regionHeight - titleBlock);
+      const fittedSize = fitCourseContentSize(
+        sorted,
+        listBase,
+        requestedSize,
+        7,
+        availableForList,
+      );
+      const listHeight = measureCourseContent(sorted, {
+        ...listBase,
+        size: fittedSize,
+      });
+
+      // Vertically CENTRE the whole block on the anchor / box middle (clamped to
+      // the page margins) so it reads as centred instead of flowing down from a
+      // top anchor. Dragging the box — or "Center selected on page" — now truly
+      // centres the content top-to-bottom.
+      const totalHeight = titleBlock + listHeight;
+      let topY = centerBlockTop(
+        centerY,
+        totalHeight,
+        pageHeight,
+        topMargin,
+        bottomMargin,
+      );
+
       if (showTitle) {
-        const titleSize = Math.round(requestedSize * 1.4);
         const tw = headingFont.widthOfTextAtSize(titleText, titleSize);
         let tx = listPh.x;
         if (listPh.align === "center") tx = listPh.x - tw / 2;
@@ -612,36 +684,14 @@ export async function renderCertificate(input: RenderInput): Promise<Uint8Array>
           color,
         });
         // Advance below the title (title height + a little breathing room).
-        topY += titleSize + Math.max(6, Math.round(requestedSize * 0.6));
+        topY += titleBlock;
       }
 
-      // Shrink-to-fit inside the box: available vertical space runs from the
-      // current topY down to the bottom of the box (when it has a height), else
-      // down to a page bottom margin. So a long list scales DOWN to fit instead
-      // of spilling past the frame — matching the neatly-fitted design.
-      const bottomMargin = 28;
-      const boxBottom =
-        listPh.height && listPh.height > 0
-          ? listPh.y + listPh.height
-          : pageHeight - bottomMargin;
-      const availableHeight = Math.max(24, boxBottom - topY);
-      const listBase = {
-        anchorX: listPh.x,
-        align: listPh.align,
+      renderCourseContent(backPage, sorted, {
+        ...listBase,
+        size: fittedSize,
         topY,
-        maxWidth: wrapWidth,
-        color,
-        font,
-        headingFont,
-      };
-      const fittedSize = fitCourseContentSize(
-        sorted,
-        listBase,
-        requestedSize,
-        7,
-        availableHeight,
-      );
-      renderCourseContent(backPage, sorted, { ...listBase, size: fittedSize });
+      });
       return out.save();
     }
 

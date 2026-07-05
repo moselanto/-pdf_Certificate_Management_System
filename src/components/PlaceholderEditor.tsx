@@ -126,17 +126,17 @@ export function PlaceholderEditor({
     dragState.current = null;
   };
 
-  // Center the selected field on the page. For the course list (top-left
-  // anchored block) we offset upward by a rough block height so the BLOCK looks
-  // centered, not its first line.
+  // Center the selected field on the page. The course list is centred on its
+  // anchor point by the renderer (the whole title+list block), so we simply drop
+  // the anchor at the page centre for a truly centred block.
   const centerSelected = () => {
     if (!selectedId) return;
     onChange(
       placeholders.map((p) => {
         if (p.id !== selectedId) return p;
         if (p.kind === "course_list") {
-          // Put the list's top a bit above the vertical middle.
-          return { ...p, x: Math.round(pageWidth / 2), y: Math.round(pageHeight * 0.32), align: "center" };
+          // Anchor marks the block's centre -> put it at the page centre.
+          return { ...p, x: Math.round(pageWidth / 2), y: Math.round(pageHeight / 2), align: "center" };
         }
         return { ...p, x: Math.round(pageWidth / 2), y: Math.round(pageHeight / 2) };
       }),
@@ -147,7 +147,9 @@ export function PlaceholderEditor({
     if (ph.kind === "qr" || ph.kind === "image" || ph.kind === "signature") {
       return "translate(0, 0)";
     }
-    if (ph.kind === "course_list") return "translate(0, 0)";
+    // The course-list anchor marks the block's CENTRE (the renderer centres the
+    // whole title+list block on it), so show the chip centred on the point.
+    if (ph.kind === "course_list") return "translate(-50%, -50%)";
     if (ph.align === "center") return "translate(-50%, 0)";
     if (ph.align === "right") return "translate(-100%, 0)";
     return "translate(0, 0)";

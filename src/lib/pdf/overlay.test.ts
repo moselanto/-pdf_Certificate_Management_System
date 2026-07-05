@@ -5,6 +5,7 @@ import {
   readTemplatePageSize,
   measureCourseContent,
   fitCourseContentSize,
+  centerBlockTop,
 } from "./overlay";
 import type { Placeholder } from "@/lib/domain/types";
 
@@ -451,5 +452,52 @@ describe("course content auto-fit (measure + shrink-to-fit)", () => {
     });
     const out = await PDFDocument.load(bytes);
     expect(out.getPageCount()).toBe(2);
+  });
+});
+
+// --- Vertical centering of the course-content block -------------------------
+describe("centerBlockTop (vertical centering, clamped to margins)", () => {
+  const pageHeight = 595;
+  const topMargin = 40;
+  const bottomMargin = 40;
+
+  it("centers a block on the given center point", () => {
+    const totalHeight = 200;
+    const top = centerBlockTop(
+      pageHeight / 2,
+      totalHeight,
+      pageHeight,
+      topMargin,
+      bottomMargin,
+    );
+    expect(top).toBeCloseTo(pageHeight / 2 - totalHeight / 2);
+  });
+
+  it("clamps to the top margin when the center is too high", () => {
+    const top = centerBlockTop(10, 200, pageHeight, topMargin, bottomMargin);
+    expect(top).toBe(topMargin);
+  });
+
+  it("clamps to the bottom when the center is too low", () => {
+    const totalHeight = 200;
+    const top = centerBlockTop(
+      pageHeight - 5,
+      totalHeight,
+      pageHeight,
+      topMargin,
+      bottomMargin,
+    );
+    expect(top).toBe(pageHeight - bottomMargin - totalHeight);
+  });
+
+  it("falls back to the top margin when the block is taller than the usable page", () => {
+    const top = centerBlockTop(
+      pageHeight / 2,
+      pageHeight,
+      pageHeight,
+      topMargin,
+      bottomMargin,
+    );
+    expect(top).toBe(topMargin);
   });
 });

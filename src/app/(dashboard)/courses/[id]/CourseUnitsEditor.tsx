@@ -28,6 +28,11 @@ export function CourseUnitsEditor({
   const [draft, setDraft] = useState("");
   const [pasteText, setPasteText] = useState(() => courseItemsToText(initialUnits));
   const [showPaste, setShowPaste] = useState(false);
+  // True when the paste box has text the user has typed but not yet turned into
+  // units via "Apply to list". Saving will apply it automatically so pasting +
+  // Save "just works" without the extra click (the old trap that saved an empty
+  // list and produced a blank certificate back page).
+  const [pasteDirty, setPasteDirty] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -60,18 +65,27 @@ export function CourseUnitsEditor({
 
   const applyPaste = () => {
     setUnits(parseCourseContent(pasteText));
+    setPasteDirty(false);
     setShowPaste(false);
   };
 
   const save = async () => {
     setSaving(true);
     setError(null);
+    // If the paste box holds text that was typed but never "applied", treat it
+    // as the source of truth so a plain paste + Save persists the content. We
+    // also reflect it in the visible list so the user sees exactly what saved.
+    const source = pasteDirty ? parseCourseContent(pasteText) : units;
+    if (pasteDirty) {
+      setUnits(source);
+      setPasteDirty(false);
+    }
     try {
       const res = await fetch(`/api/courses/${courseId}/units`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          units: units
+          units: source
             .filter((u) => u.title.trim())
             .map((u) => ({
               title: u.title,
@@ -116,11 +130,16 @@ export function CourseUnitsEditor({
               Theory, Practical). A line starting with{" "}
               <span className="font-mono">- </span> is a{" "}
               <span className="font-semibold">checklist item</span>. Blank lines
-              are spacing. Applying replaces the list below.
+              are spacing. Applying replaces the list below — or just click{" "}
+              <span className="font-semibold">Save units</span> and this text
+              will be applied automatically.
             </p>
             <textarea
               value={pasteText}
-              onChange={(e) => setPasteText(e.target.value)}
+              onChange={(e) => {
+                setPasteText(e.target.value);
+                setPasteDirty(true);
+              }}
               rows={10}
               placeholder={
                 "Theory\n- Duty of Care\n- Safeguarding Adults and Children\n\nPractical\n- Basic Life Support\n- Moving and Handling"
@@ -133,6 +152,11 @@ export function CourseUnitsEditor({
             >
               Apply to list
             </button>
+            {pasteDirty && (
+              <p className="text-xs font-medium text-amber-600">
+                Un-applied text — it will be applied when you click Save units.
+              </p>
+            )}
           </div>
         )}
       </div>

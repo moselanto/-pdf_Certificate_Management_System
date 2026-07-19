@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import type { User } from "@supabase/supabase-js";
 
 // Refreshes the Supabase auth session on every request (following the official
 // @supabase/ssr pattern) and guards the authenticated app.
@@ -9,6 +10,14 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 // visible to downstream server route handlers. Calling supabase.auth.getUser()
 // here is what triggers the cookie refresh. Public routes are allowed through
 // without a session.
+//
+// RESILIENCE: the auth check is a NETWORK call to Supabase. If that backend is
+// slow or unreachable (for example a free-tier project that was auto-paused
+// after inactivity), the call can hang until Vercel kills the whole request
+// with a 504 (MIDDLEWARE_INVOCATION_TIMEOUT) — taking the ENTIRE site down. To
+// avoid that we race getUser() against a short timeout and, on timeout/error,
+// treat the request as having no verified user: protected pages fall through to
+// the /login redirect (which renders without the backend) instead of 504-ing.
 const PUBLIC_PREFIXES = [
   "/verify",
   "/login",
@@ -23,8 +32,22 @@ const PUBLIC_PREFIXES = [
   "/apple-touch-icon",
 ];
 
+// Max time to wait for the Supabase auth check before giving up, so a slow or
+// paused backend degrades gracefully instead of timing out the whole request.
+const AUTH_TIMEOUT_MS = 4000;
+
 // Shape of a single cookie passed to the SSR client's setAll callback.
 type CookieToSet = { name: string; value: string; options: CookieOptions };
+
+// Resolve/reject `promise` but never wait longer than `ms`.
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error("supabase-auth-timeout")), ms),
+    ),
+  ]);
+}
 
 export async function middleware(req: NextRequest) {
   let response = NextResponse.next({ request: { headers: req.headers } });
@@ -50,10 +73,23 @@ export async function middleware(req: NextRequest) {
     },
   );
 
-  // This refreshes the session and, via setAll above, the auth cookies.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // This refreshes the session and, via setAll above, the auth cookies. It is a
+  // network call, so we race it against a timeout: if Supabase is slow or
+  // unreachable we fall back to "no user" rather than hanging the whole site.
+  let user: User | null = null;
+  try {
+    const { data } = await withTimeout(
+      supabase.auth.getUser(),
+      AUTH_TIMEOUT_MS,
+    );
+    user = data.user;
+  } catch {
+    // Timed out or errored — treat as unauthenticated. Protected pages get sent
+    // to /login (which renders without the backend); public routes and the
+    // homepage pass through. This keeps the site responsive when the backend is
+    // temporarily unavailable instead of returning a site-wide 504.
+    user = null;
+  }
 
   const { pathname } = req.nextUrl;
   const isPublic = PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));
